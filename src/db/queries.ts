@@ -172,13 +172,14 @@ export function getUnfinishedScan(db: Database, scanType: string): { id: number;
   return row ?? null;
 }
 
-export function getLatestFinishedScanId(db: Database): number | null {
-  const row = db.query("SELECT id FROM scans WHERE finished_at IS NOT NULL ORDER BY id DESC LIMIT 1").get() as { id: number } | null;
-  return row?.id ?? null;
-}
 
-export function getAliveCitizenIds(db: Database, scanId: number): number[] {
-  const rows = db.query("SELECT citizen_id FROM snapshots WHERE scan_id = ? AND status = 'alive' ORDER BY citizen_id").all(scanId) as { citizen_id: number }[];
+export function getAliveCitizenIds(db: Database): number[] {
+  const rows = db.query(`
+    SELECT citizen_id FROM snapshots s
+    WHERE status = 'alive'
+      AND scan_id = (SELECT MAX(scan_id) FROM snapshots WHERE citizen_id = s.citizen_id)
+    ORDER BY citizen_id
+  `).all() as { citizen_id: number }[];
   return rows.map((r) => r.citizen_id);
 }
 

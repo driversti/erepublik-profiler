@@ -1,5 +1,7 @@
 import type { Database } from "bun:sqlite";
 import type { Config } from "../config.ts";
+
+type ScanConfig = Config & { startId: number; endId: number };
 import {
   createScan,
   finishScan,
@@ -12,7 +14,6 @@ import {
   getCheckpoint,
   incrementScanCounters,
   getUnfinishedScan,
-  getLatestFinishedScanId,
   getAliveCitizenIds,
   getQueuedRetryIds,
   markCitizenRetried,
@@ -76,7 +77,7 @@ function retryScanRange(citizenIds: number[]): ScanRange {
 
 export async function runScan(
   db: Database,
-  config: Config,
+  config: ScanConfig,
   scanType: "full" | "alive" | "retry",
   rotateVpn: (oldIp: string) => Promise<string>,
   sendTelegram: (msg: string) => Promise<void>,
@@ -88,14 +89,9 @@ export async function runScan(
   let retryRowIdMap: Map<number, number> | null = null;
 
   if (scanType === "alive") {
-    const latestScanId = getLatestFinishedScanId(db);
-    if (!latestScanId) {
-      console.error("No previous scan found. Run a full scan first.");
-      return;
-    }
-    const citizenIds = getAliveCitizenIds(db, latestScanId);
+    const citizenIds = getAliveCitizenIds(db);
     if (citizenIds.length === 0) {
-      console.log("No alive citizens found in latest scan.");
+      console.log("No alive citizens found.");
       return;
     }
     range = aliveScanRange(citizenIds);

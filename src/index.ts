@@ -21,13 +21,19 @@ const telegram = createTelegram(config);
 const vpn = createVpn(config, telegram.send);
 
 if (command === "scan") {
+  if (config.startId == null || config.endId == null) {
+    console.error("START_ID and END_ID are required for scan mode");
+    process.exit(1);
+  }
+
   const arg = process.argv[3];
   const scanType = (["alive", "retry"].includes(arg) ? arg : "full") as "full" | "alive" | "retry";
 
   try {
     const ipInfo = await vpn.checkIpLeak();
     console.log(`Current IP: ${ipInfo.ip} (${ipInfo.country})`);
-    await runScan(db, config, scanType, vpn.rotateVpn, telegram.send, ipInfo.ip);
+    const scanConfig = { ...config, startId: config.startId!, endId: config.endId! };
+    await runScan(db, scanConfig, scanType, vpn.rotateVpn, telegram.send, ipInfo.ip);
   } catch (err) {
     const msg = `💀 Fatal error: ${(err as Error).message}`;
     console.error(msg);

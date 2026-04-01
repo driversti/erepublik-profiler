@@ -1,15 +1,30 @@
 services:
-  profiler:
+  profiler-api:
     image: registry.yurii.live/profiler:latest
-    container_name: profiler
+    container_name: profiler-api
     restart: unless-stopped
+    command: ["bun", "run", "src/index.ts", "api"]
+    environment:
+      - DB_PATH=/app/data/profiler.db
+      - API_PORT=3000
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      gluetun:
+        condition: service_healthy
+    network_mode: "service:gluetun"
+
+  profiler-scanner:
+    image: registry.yurii.live/profiler:latest
+    container_name: profiler-scanner
+    restart: unless-stopped
+    command: ["bun", "run", "src/index.ts", "scan"]
     environment:
       - START_ID=${START_ID}
       - END_ID=${END_ID}
       - BASE_DELAY_MS=${BASE_DELAY_MS:-10}
       - CHECKPOINT_INTERVAL=${CHECKPOINT_INTERVAL:-100}
       - DB_PATH=/app/data/profiler.db
-      - API_PORT=3000
       - BOT_TOKEN=${BOT_TOKEN}
       - CHAT_ID=${CHAT_ID}
       - TOPIC_ID=${TOPIC_ID}
@@ -20,6 +35,8 @@ services:
       gluetun:
         condition: service_healthy
     network_mode: "service:gluetun"
+    profiles:
+      - scan
 
   gluetun:
     image: qmcgaw/gluetun

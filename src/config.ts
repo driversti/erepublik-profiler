@@ -1,6 +1,6 @@
 export interface Config {
-  startId: number;
-  endId: number;
+  startId: number | null;
+  endId: number | null;
   baseDelayMs: number;
   checkpointInterval: number;
   dbPath: string;
@@ -20,18 +20,10 @@ export interface Config {
   progressEveryN: number;
 }
 
-function required(name: string): string {
-  const value = process.env[name];
-  if (!value) {
-    throw new Error(`Missing required environment variable: ${name}`);
-  }
-  return value;
-}
-
 export function loadConfig(): Config {
   return {
-    startId: parseInt(required("START_ID"), 10),
-    endId: parseInt(required("END_ID"), 10),
+    startId: process.env.START_ID ? parseInt(process.env.START_ID, 10) : null,
+    endId: process.env.END_ID ? parseInt(process.env.END_ID, 10) : null,
     baseDelayMs: parseInt(process.env.BASE_DELAY_MS || "10", 10),
     checkpointInterval: parseInt(process.env.CHECKPOINT_INTERVAL || "100", 10),
     dbPath: process.env.DB_PATH || "./data/profiler.db",

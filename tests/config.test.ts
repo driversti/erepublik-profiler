@@ -37,9 +37,12 @@ describe("loadConfig", () => {
     expect(config.topicId).toBeNull();
   });
 
-  test("throws when required vars missing", async () => {
+  test("returns null when START_ID/END_ID missing", async () => {
     delete process.env.START_ID;
+    delete process.env.END_ID;
     const { loadConfig } = await import("../src/config.ts");
-    expect(() => loadConfig()).toThrow("START_ID");
+    const config = loadConfig();
+    expect(config.startId).toBeNull();
+    expect(config.endId).toBeNull();
   });
 });

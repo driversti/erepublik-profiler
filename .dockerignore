@@ -1,0 +1,11 @@
+.git/
+.idea/
+.env
+data/
+gluetun/
+node_modules/
+frontend/node_modules/
+frontend/dist/
+tests/
+docs/
+*.md

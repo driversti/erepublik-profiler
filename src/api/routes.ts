@@ -1,3 +1,4 @@
+import { join, resolve } from "node:path";
 import type { Database } from "bun:sqlite";
 import type { ProcessManager } from "./process-manager.ts";
 import {
@@ -6,6 +7,8 @@ import {
   queueFailedCitizensForRetry,
   queueAllFailedCitizensForRetry,
 } from "../db/queries.ts";
+
+const FRONTEND_DIR = resolve(import.meta.dir, "../../frontend/dist");
 
 // Subquery that resolves to one row per citizen — their latest snapshot.
 const LATEST = `
@@ -277,6 +280,15 @@ export function createRouteHandler(db: Database, processManager: ProcessManager)
         }
         return json({ ok: true });
       }
+
+      // Static file serving (frontend)
+      const filePath = join(FRONTEND_DIR, path);
+      const file = Bun.file(filePath);
+      if (await file.exists()) return new Response(file);
+
+      // SPA fallback — serve index.html for client-side routes
+      const indexFile = Bun.file(join(FRONTEND_DIR, "index.html"));
+      if (await indexFile.exists()) return new Response(indexFile);
 
       return json({ error: "Not found" }, 404);
     } catch (err) {
