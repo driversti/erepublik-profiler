@@ -1,9 +1,9 @@
 services:
-  profiler-api:
+  profiler-web:
     image: registry.yurii.live/profiler:latest
-    container_name: profiler-api
+    container_name: profiler-web
     restart: unless-stopped
-    command: ["bun", "run", "src/index.ts", "api"]
+    command: ["bun", "run", "src/index.ts", "web"]
     environment:
       - DB_PATH=/app/data/profiler.db
       - API_PORT=3000

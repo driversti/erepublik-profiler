@@ -7,11 +7,11 @@ import { startApiServer } from "./api/server.ts";
 
 const command = process.argv[2];
 
-if (!command || !["scan", "api"].includes(command)) {
+if (!command || !["scan", "web"].includes(command)) {
   console.log("Usage: bun run src/index.ts <command>");
   console.log("Commands:");
   console.log("  scan [full|alive]  — Run a scan (default: full)");
-  console.log("  api                — Start the REST API server");
+  console.log("  web                — Start the web server (API + dashboard)");
   process.exit(1);
 }
 
@@ -42,6 +42,6 @@ if (command === "scan") {
   } finally {
     db.close();
   }
-} else if (command === "api") {
+} else if (command === "web") {
   startApiServer(db, config);
 }

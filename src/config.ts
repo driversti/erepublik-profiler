@@ -10,10 +10,7 @@ export interface Config {
   topicId: string | null;
   homeCountry: string;
   gluetunApiUrl: string;
-  backoffSteps: number[];
-  backoffSteps5xx: number[];
   jitterPercent: number;
-  maxVpnRotationsPerRequest: number;
   vpnPollIntervalMs: number;
   vpnPollTimeoutMs: number;
   vpnSleepOnFailureMs: number;
@@ -33,10 +30,7 @@ export function loadConfig(): Config {
     topicId: process.env.TOPIC_ID || null,
     homeCountry: process.env.HOME_COUNTRY || "PL",
     gluetunApiUrl: process.env.GLUETUN_API_URL || "http://localhost:8000",
-    backoffSteps: [1000, 1000, 1000],
-    backoffSteps5xx: [1000, 1000, 1000],
     jitterPercent: 0.3,
-    maxVpnRotationsPerRequest: 3,
     vpnPollIntervalMs: 2000,
     vpnPollTimeoutMs: 30000,
     vpnSleepOnFailureMs: 300_000,

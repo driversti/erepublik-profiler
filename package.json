@@ -8,7 +8,7 @@
     "start": "bun run src/index.ts",
     "test": "bun test",
     "scan": "bun run src/index.ts scan",
-    "api": "bun run src/index.ts api"
+    "web": "bun run src/index.ts web"
   },
   "dependencies": {
     "got-scraping": "^4.1.2"

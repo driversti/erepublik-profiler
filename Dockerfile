@@ -14,4 +14,4 @@ RUN bun install --production --frozen-lockfile
 COPY src/ ./src/
 COPY --from=frontend /build/dist ./frontend/dist/
 
-CMD ["bun", "run", "src/index.ts", "api"]
+CMD ["bun", "run", "src/index.ts", "web"]

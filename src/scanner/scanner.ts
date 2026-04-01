@@ -20,7 +20,54 @@ import {
   type SnapshotRow,
 } from "../db/queries.ts";
 import { parseCitizenResponse } from "./parser.ts";
-import { fetchWithRetry, withJitter } from "./retry.ts";
+import { fetchCitizen } from "./fetcher.ts";
+
+function withJitter(ms: number, jitterPercent: number): number {
+  if (ms === 0) return 0;
+  const jitter = ms * jitterPercent;
+  return Math.round(ms + (Math.random() * 2 - 1) * jitter);
+}
+
+const COOLDOWN_DELAY_MS = 200;
+const COOLDOWN_REQUESTS = 30;
+const MIN_SUCCESSES_BEFORE_FAST = 100;
+
+class Throttle {
+  private baseDelayMs: number;
+  private jitterPercent: number;
+  private requestsSinceRotation = Infinity; // start fast — no cooldown needed
+  private successesSinceRotation = 0;
+  private consecutiveQuickBlocks = 0;
+
+  constructor(baseDelayMs: number, jitterPercent: number) {
+    this.baseDelayMs = baseDelayMs;
+    this.jitterPercent = jitterPercent;
+  }
+
+  onSuccess(): void {
+    this.requestsSinceRotation++;
+    this.successesSinceRotation++;
+  }
+
+  onRotation(): void {
+    if (this.successesSinceRotation < MIN_SUCCESSES_BEFORE_FAST) {
+      this.consecutiveQuickBlocks++;
+    } else {
+      this.consecutiveQuickBlocks = 0;
+    }
+    this.requestsSinceRotation = 0;
+    this.successesSinceRotation = 0;
+  }
+
+  getDelay(): number {
+    const cooldownWindow = COOLDOWN_REQUESTS * (1 + this.consecutiveQuickBlocks);
+    if (this.requestsSinceRotation < cooldownWindow) {
+      const cooldown = COOLDOWN_DELAY_MS * (1 + this.consecutiveQuickBlocks);
+      return withJitter(cooldown, this.jitterPercent);
+    }
+    return withJitter(this.baseDelayMs, this.jitterPercent);
+  }
+}
 
 interface ScanStats {
   alive: number;
@@ -156,6 +203,7 @@ export async function runScan(
   await sendTelegram(startMsg);
 
   const stats: ScanStats = { alive: 0, dead: 0, banned: 0, notFound: 0, skipped: 0, errors: 0 };
+  const throttle = new Throttle(config.baseDelayMs, config.jitterPercent);
   const scanStartTime = Date.now();
   let ip = currentIp;
   let shuttingDown = false;
@@ -187,10 +235,18 @@ export async function runScan(
     }
 
     const citizenId = range.getId(i);
-    const { fetchResult, newIp, totalAttempts } = await fetchWithRetry(
-      citizenId, ip, config, rotateVpn, sendTelegram,
-    );
-    if (newIp) ip = newIp;
+    const fetchResult = await fetchCitizen(citizenId);
+
+    // Rotate VPN on block (403/Cloudflare) so subsequent profiles have a fresh IP
+    if (fetchResult.type === "error" && fetchResult.error?.retryable) {
+      const code = fetchResult.error.statusCode;
+      if (code === 403 || code === 429 || !code) {
+        throttle.onRotation();
+        ip = await rotateVpn(ip);
+      }
+    } else {
+      throttle.onSuccess();
+    }
 
     const now = new Date().toISOString();
     batchScanned++;
@@ -257,7 +313,7 @@ export async function runScan(
         db, scanId, citizenId, now,
         fetchResult.error?.message ?? "Unknown error",
         fetchResult.error?.statusCode,
-        totalAttempts,
+        1,
       );
     }
 
@@ -282,8 +338,8 @@ export async function runScan(
       await sendTelegram(msg);
     }
 
-    // Delay between requests
-    const delay = withJitter(config.baseDelayMs, config.jitterPercent);
+    // Adaptive delay between requests
+    const delay = throttle.getDelay();
     if (delay > 0) await Bun.sleep(delay);
   }
 

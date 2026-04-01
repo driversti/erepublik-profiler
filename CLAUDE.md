@@ -13,7 +13,7 @@ eRepublik citizen profile scanner. See SPEC.md for full specification.
 bun install                    # install deps
 bun test                       # run tests
 bun run scan                   # start scanner
-bun run api                    # start API server
+bun run web                    # start web server (API + dashboard)
 bun run dev                    # dev mode with watch
 ```
 
