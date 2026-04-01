@@ -155,6 +155,18 @@ export function getLatestScanId(db: Database): number | null {
   return row?.id ?? null;
 }
 
+export function getUnfinishedScan(db: Database, scanType: string): { id: number; start_id: number; end_id: number } | null {
+  const row = db.query(
+    "SELECT id, start_id, end_id FROM scans WHERE scan_type = ? AND finished_at IS NULL ORDER BY id DESC LIMIT 1"
+  ).get(scanType) as { id: number; start_id: number; end_id: number } | null;
+  return row ?? null;
+}
+
+export function getLatestFinishedScanId(db: Database): number | null {
+  const row = db.query("SELECT id FROM scans WHERE finished_at IS NOT NULL ORDER BY id DESC LIMIT 1").get() as { id: number } | null;
+  return row?.id ?? null;
+}
+
 export function getAliveCitizenIds(db: Database, scanId: number): number[] {
   const rows = db.query("SELECT citizen_id FROM snapshots WHERE scan_id = ? AND status = 'alive' ORDER BY citizen_id").all(scanId) as { citizen_id: number }[];
   return rows.map((r) => r.citizen_id);

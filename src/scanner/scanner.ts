@@ -8,7 +8,8 @@ import {
   saveCheckpoint,
   getCheckpoint,
   incrementScanCounters,
-  getLatestScanId,
+  getUnfinishedScan,
+  getLatestFinishedScanId,
   getAliveCitizenIds,
   type SnapshotRow,
 } from "../db/queries.ts";
@@ -30,6 +31,35 @@ function formatDuration(ms: number): string {
   return hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
 }
 
+/**
+ * Iterates citizen IDs for a scan. For full scans, yields sequential IDs
+ * without allocating an array. For alive scans, uses the pre-fetched ID list.
+ */
+interface ScanRange {
+  totalCount: number;
+  startId: number;
+  endId: number;
+  getId(index: number): number;
+}
+
+function fullScanRange(startId: number, endId: number, resumeFromIndex: number): ScanRange {
+  return {
+    totalCount: endId - startId + 1,
+    startId,
+    endId,
+    getId(index: number) { return startId + index; },
+  };
+}
+
+function aliveScanRange(citizenIds: number[]): ScanRange {
+  return {
+    totalCount: citizenIds.length,
+    startId: citizenIds[0],
+    endId: citizenIds[citizenIds.length - 1],
+    getId(index: number) { return citizenIds[index]; },
+  };
+}
+
 export async function runScan(
   db: Database,
   config: Config,
@@ -38,48 +68,57 @@ export async function runScan(
   sendTelegram: (msg: string) => Promise<void>,
   currentIp: string,
 ): Promise<void> {
-  let citizenIds: number[];
-  let startId: number;
-  let endId: number;
+  let range: ScanRange;
+  let scanId: number;
+  let startIndex = 0;
 
   if (scanType === "alive") {
-    const latestScanId = getLatestScanId(db);
+    const latestScanId = getLatestFinishedScanId(db);
     if (!latestScanId) {
       console.error("No previous scan found. Run a full scan first.");
       return;
     }
-    citizenIds = getAliveCitizenIds(db, latestScanId);
+    const citizenIds = getAliveCitizenIds(db, latestScanId);
     if (citizenIds.length === 0) {
       console.log("No alive citizens found in latest scan.");
       return;
     }
-    startId = citizenIds[0];
-    endId = citizenIds[citizenIds.length - 1];
+    range = aliveScanRange(citizenIds);
     console.log(`Alive scan: ${citizenIds.length} citizens to re-scan`);
+
+    // Resume unfinished alive scan or create new one
+    const unfinished = getUnfinishedScan(db, "alive");
+    if (unfinished) {
+      scanId = unfinished.id;
+      const cp = getCheckpoint(db, scanId);
+      if (cp) {
+        const idx = citizenIds.indexOf(cp);
+        startIndex = idx >= 0 ? idx + 1 : citizenIds.findIndex((id) => id > cp);
+        if (startIndex < 0) startIndex = citizenIds.length;
+        console.log(`Resuming alive scan ${scanId} from checkpoint: ID ${cp}`);
+      }
+    } else {
+      scanId = createScan(db, scanType, range.startId, range.endId);
+    }
   } else {
-    startId = config.startId;
-    endId = config.endId;
-    citizenIds = [];
-    for (let i = startId; i <= endId; i++) {
-      citizenIds.push(i);
+    range = fullScanRange(config.startId, config.endId, 0);
+
+    // Resume unfinished full scan or create new one
+    const unfinished = getUnfinishedScan(db, "full");
+    if (unfinished) {
+      scanId = unfinished.id;
+      const cp = getCheckpoint(db, scanId);
+      if (cp) {
+        startIndex = cp - config.startId + 1;
+        console.log(`Resuming full scan ${scanId} from checkpoint: ID ${cp}`);
+      }
+    } else {
+      scanId = createScan(db, scanType, config.startId, config.endId);
     }
   }
 
-  const scanId = createScan(db, scanType, startId, endId);
-
-  // Check for existing checkpoint to resume
-  const checkpoint = getCheckpoint(db, scanId);
-  let startIndex = 0;
-  if (checkpoint) {
-    startIndex = citizenIds.indexOf(checkpoint) + 1;
-    if (startIndex <= 0) {
-      startIndex = citizenIds.findIndex((id) => id > checkpoint);
-      if (startIndex < 0) startIndex = citizenIds.length;
-    }
-    console.log(`Resuming from checkpoint: ID ${checkpoint} (index ${startIndex})`);
-  }
-
-  const startMsg = `🚀 Profiler scan started. Type: ${scanType}. Range: ${startId}–${endId}. Total: ${citizenIds.length - startIndex}. IP: ${currentIp}`;
+  const remaining = range.totalCount - startIndex;
+  const startMsg = `🚀 Profiler scan started. Type: ${scanType}. Range: ${range.startId}–${range.endId}. Remaining: ${remaining}. IP: ${currentIp}`;
   console.log(startMsg);
   await sendTelegram(startMsg);
 
@@ -88,28 +127,33 @@ export async function runScan(
   let ip = currentIp;
   let shuttingDown = false;
 
-  const shutdown = () => {
-    shuttingDown = true;
-  };
+  const shutdown = () => { shuttingDown = true; };
   process.on("SIGTERM", shutdown);
   process.on("SIGINT", shutdown);
 
   let batchScanned = 0;
   let batchFound = 0;
 
-  for (let i = startIndex; i < citizenIds.length; i++) {
+  // Begin a transaction for the first batch
+  db.run("BEGIN");
+
+  for (let i = startIndex; i < range.totalCount; i++) {
     if (shuttingDown) {
-      const msg = `🛑 Profiler stopped at ID ${citizenIds[i]}`;
+      db.run("COMMIT");
+      const citizenId = range.getId(i);
+      const msg = `🛑 Profiler stopped at ID ${citizenId}`;
       console.log(msg);
       await sendTelegram(msg);
-      saveCheckpoint(db, scanId, citizenIds[i - 1] ?? startId);
+      if (i > startIndex) {
+        saveCheckpoint(db, scanId, range.getId(i - 1));
+      }
       incrementScanCounters(db, scanId, { scanned: batchScanned, found: batchFound });
       process.removeListener("SIGTERM", shutdown);
       process.removeListener("SIGINT", shutdown);
       return;
     }
 
-    const citizenId = citizenIds[i];
+    const citizenId = range.getId(i);
     const { fetchResult, newIp } = await fetchWithRetry(
       citizenId, ip, config, rotateVpn, sendTelegram,
     );
@@ -165,12 +209,14 @@ export async function runScan(
       stats.errors++;
     }
 
-    // Checkpoint
+    // Checkpoint + commit transaction at batch intervals
     if (batchScanned % config.checkpointInterval === 0) {
+      db.run("COMMIT");
       saveCheckpoint(db, scanId, citizenId);
       incrementScanCounters(db, scanId, { scanned: batchScanned, found: batchFound });
       batchScanned = 0;
       batchFound = 0;
+      db.run("BEGIN");
     }
 
     // Progress notification
@@ -178,8 +224,8 @@ export async function runScan(
     if (totalProcessed % config.progressEveryN === 0) {
       const elapsed = Date.now() - scanStartTime;
       const speed = Math.round(totalProcessed / (elapsed / 60_000));
-      const pct = ((totalProcessed / (citizenIds.length - startIndex)) * 100).toFixed(1);
-      const msg = `📊 Progress: ${citizenId}/${endId} (${pct}%) · Alive: ${stats.alive} · Dead: ${stats.dead} · 404: ${stats.notFound} · Speed: ${speed}/min`;
+      const pct = ((totalProcessed / remaining) * 100).toFixed(1);
+      const msg = `📊 Progress: ${citizenId}/${range.endId} (${pct}%) · Alive: ${stats.alive} · Dead: ${stats.dead} · 404: ${stats.notFound} · Speed: ${speed}/min`;
       console.log(msg);
       await sendTelegram(msg);
     }
@@ -189,7 +235,9 @@ export async function runScan(
     if (delay > 0) await Bun.sleep(delay);
   }
 
-  // Flush remaining counters
+  // Commit remaining batch
+  db.run("COMMIT");
+
   if (batchScanned > 0) {
     incrementScanCounters(db, scanId, { scanned: batchScanned, found: batchFound });
   }

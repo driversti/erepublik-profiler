@@ -7,10 +7,6 @@ export function withJitter(ms: number, jitterPercent: number): number {
   return Math.round(ms + (Math.random() * 2 - 1) * jitter);
 }
 
-export function isRetryExhausted(attempt: number, backoffSteps: number[]): boolean {
-  return attempt >= backoffSteps.length;
-}
-
 export interface RetryResult {
   fetchResult: FetchResult;
   newIp?: string;
