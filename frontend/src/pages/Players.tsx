@@ -27,7 +27,7 @@ function Players() {
   const [sort, setSort] = useState<SortKey>('id');
   const [order, setOrder] = useState<'asc' | 'desc'>('asc');
   const [offset, setOffset] = useState(0);
-  const limit = 50;
+  const limit = 100;
 
   const { data, isLoading } = usePlayers(status, sort, order, limit, offset);
 
