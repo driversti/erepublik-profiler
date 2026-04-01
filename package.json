@@ -1,0 +1,16 @@
+{
+  "name": "profiler",
+  "version": "1.0.0",
+  "description": "eRepublik citizen profile scanner and analytics",
+  "type": "module",
+  "scripts": {
+    "dev": "bun run --watch src/index.ts",
+    "start": "bun run src/index.ts",
+    "test": "bun test",
+    "scan": "bun run src/index.ts scan",
+    "api": "bun run src/index.ts api"
+  },
+  "dependencies": {
+    "got-scraping": "^4.1.2"
+  }
+}
