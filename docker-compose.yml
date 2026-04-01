@@ -1,0 +1,50 @@
+services:
+  profiler:
+    image: registry.yurii.live/profiler:latest
+    container_name: profiler
+    restart: unless-stopped
+    environment:
+      - START_ID=${START_ID}
+      - END_ID=${END_ID}
+      - BASE_DELAY_MS=${BASE_DELAY_MS:-10}
+      - CHECKPOINT_INTERVAL=${CHECKPOINT_INTERVAL:-100}
+      - DB_PATH=/app/data/profiler.db
+      - API_PORT=3000
+      - BOT_TOKEN=${BOT_TOKEN}
+      - CHAT_ID=${CHAT_ID}
+      - TOPIC_ID=${TOPIC_ID}
+      - HOME_COUNTRY=${HOME_COUNTRY:-PL}
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      gluetun:
+        condition: service_healthy
+    network_mode: "service:gluetun"
+
+  gluetun:
+    image: qmcgaw/gluetun
+    container_name: gluetun-profiler
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    environment:
+      - VPN_SERVICE_PROVIDER=surfshark
+      - VPN_TYPE=wireguard
+      - WIREGUARD_PRIVATE_KEY=${WIREGUARD_PRIVATE_KEY}
+      - WIREGUARD_ADDRESSES=${WIREGUARD_ADDRESSES}
+      - SERVER_COUNTRIES=${SERVER_COUNTRIES:-Germany}
+      - TZ=America/Los_Angeles
+      - HTTP_CONTROL_SERVER_ADDRESS=:8000
+    ports:
+      - "3000:3000"
+      - "8000:8000"
+    volumes:
+      - ./gluetun:/gluetun
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://www.google.com"]
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      retries: 3
