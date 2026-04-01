@@ -135,6 +135,16 @@ export function insertAchievements(db: Database, scanId: number, citizenId: numb
   }
 }
 
+export function insertScanError(db: Database, scanId: number, citizenId: number, scannedAt: string, statusCode: number | null | undefined, errorMessage: string, retryable: boolean): void {
+  db.query("INSERT INTO scan_errors (scan_id, citizen_id, scanned_at, status_code, error_message, retryable) VALUES (?, ?, ?, ?, ?, ?)")
+    .run(scanId, citizenId, scannedAt, statusCode ?? null, errorMessage, retryable ? 1 : 0);
+}
+
+export function insertOrganization(db: Database, scanId: number, citizenId: number, name: string | null, createdAt: string | null, scannedAt: string): void {
+  db.query("INSERT INTO organizations (scan_id, citizen_id, name, created_at, scanned_at) VALUES (?, ?, ?, ?, ?)")
+    .run(scanId, citizenId, name, createdAt, scannedAt);
+}
+
 export function getCheckpoint(db: Database, scanId: number): number | null {
   const row = db.query("SELECT last_processed_id FROM checkpoint WHERE scan_id = ?").get(scanId) as { last_processed_id: number } | null;
   return row?.last_processed_id ?? null;
@@ -170,4 +180,76 @@ export function getLatestFinishedScanId(db: Database): number | null {
 export function getAliveCitizenIds(db: Database, scanId: number): number[] {
   const rows = db.query("SELECT citizen_id FROM snapshots WHERE scan_id = ? AND status = 'alive' ORDER BY citizen_id").all(scanId) as { citizen_id: number }[];
   return rows.map((r) => r.citizen_id);
+}
+
+export interface FailedCitizenRow {
+  id: number;
+  scan_id: number;
+  citizen_id: number;
+  failed_at: string;
+  error_message: string;
+  status_code: number | null;
+  retry_count: number;
+  retry_queued_at: string | null;
+  retried_at: string | null;
+}
+
+export function insertFailedCitizen(
+  db: Database,
+  scanId: number,
+  citizenId: number,
+  failedAt: string,
+  errorMessage: string,
+  statusCode: number | null | undefined,
+  retryCount: number,
+): void {
+  db.query(
+    "INSERT INTO failed_citizens (scan_id, citizen_id, failed_at, error_message, status_code, retry_count) VALUES (?, ?, ?, ?, ?, ?)"
+  ).run(scanId, citizenId, failedAt, errorMessage, statusCode ?? null, retryCount);
+}
+
+export function getFailedCitizens(
+  db: Database,
+  scanId: number | null,
+  limit: number,
+  offset: number,
+): FailedCitizenRow[] {
+  if (scanId !== null) {
+    return db.query(
+      "SELECT * FROM failed_citizens WHERE scan_id = ? ORDER BY citizen_id LIMIT ? OFFSET ?"
+    ).all(scanId, limit, offset) as FailedCitizenRow[];
+  }
+  return db.query(
+    "SELECT * FROM failed_citizens ORDER BY citizen_id LIMIT ? OFFSET ?"
+  ).all(limit, offset) as FailedCitizenRow[];
+}
+
+export function countFailedCitizens(db: Database, scanId: number | null): number {
+  const row = scanId !== null
+    ? db.query("SELECT COUNT(*) AS count FROM failed_citizens WHERE scan_id = ?").get(scanId) as { count: number }
+    : db.query("SELECT COUNT(*) AS count FROM failed_citizens").get() as { count: number };
+  return row.count;
+}
+
+export function queueFailedCitizensForRetry(db: Database, ids: number[]): void {
+  const now = new Date().toISOString();
+  const stmt = db.query("UPDATE failed_citizens SET retry_queued_at = ? WHERE id = ? AND retry_queued_at IS NULL AND retried_at IS NULL");
+  for (const id of ids) stmt.run(now, id);
+}
+
+export function queueAllFailedCitizensForRetry(db: Database): void {
+  db.query("UPDATE failed_citizens SET retry_queued_at = ? WHERE retry_queued_at IS NULL AND retried_at IS NULL")
+    .run(new Date().toISOString());
+}
+
+export function getQueuedRetryIds(db: Database): { id: number; citizen_id: number }[] {
+  return db.query(
+    "SELECT id, citizen_id FROM failed_citizens WHERE retry_queued_at IS NOT NULL AND retried_at IS NULL ORDER BY citizen_id"
+  ).all() as { id: number; citizen_id: number }[];
+}
+
+export function markCitizenRetried(db: Database, id: number): void {
+  db.query(
+    "UPDATE failed_citizens SET retried_at = ? WHERE id = ? AND retry_queued_at IS NOT NULL AND retried_at IS NULL"
+  ).run(new Date().toISOString(), id);
 }

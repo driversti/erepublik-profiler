@@ -75,9 +75,16 @@ function CountryDetail() {
                 {(citizens?.results || []).map((c) => (
                   <tr key={c.citizen_id} className="border-b border-surface-secondary hover:bg-surface-hover">
                     <td className="py-2">
-                      <Link to={`/citizens/${c.citizen_id}`} className="text-accent hover:text-accent-hover font-medium">
-                        {c.name}
-                      </Link>
+                      <div className="flex items-center gap-2">
+                        <span className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                          c.status === 'alive' ? 'bg-green-500' :
+                          c.status === 'banned' ? 'bg-red-500' :
+                          'bg-black dark:bg-gray-400'
+                        }`} />
+                        <Link to={`/citizens/${c.citizen_id}`} className="text-accent hover:text-accent-hover font-medium">
+                          {c.name}
+                        </Link>
+                      </div>
                     </td>
                     <td className="py-2 text-right text-primary">{c.level}</td>
                     <td className="py-2 text-right text-primary">{formatNumber(c.strength)}</td>

@@ -28,6 +28,7 @@ export async function fetchCitizen(citizenId: number): Promise<FetchResult> {
       headers: {
         "X-Requested-With": "XMLHttpRequest",
       },
+      http2: false,
       timeout: { request: 15_000 },
       responseType: "text",
     });

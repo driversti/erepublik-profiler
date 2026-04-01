@@ -5,12 +5,17 @@ import {
   finishScan,
   insertSnapshot,
   insertAchievements,
+  insertOrganization,
+  insertScanError,
+  insertFailedCitizen,
   saveCheckpoint,
   getCheckpoint,
   incrementScanCounters,
   getUnfinishedScan,
   getLatestFinishedScanId,
   getAliveCitizenIds,
+  getQueuedRetryIds,
+  markCitizenRetried,
   type SnapshotRow,
 } from "../db/queries.ts";
 import { parseCitizenResponse } from "./parser.ts";
@@ -60,10 +65,19 @@ function aliveScanRange(citizenIds: number[]): ScanRange {
   };
 }
 
+function retryScanRange(citizenIds: number[]): ScanRange {
+  return {
+    totalCount: citizenIds.length,
+    startId: citizenIds[0],
+    endId: citizenIds[citizenIds.length - 1],
+    getId(index: number) { return citizenIds[index]; },
+  };
+}
+
 export async function runScan(
   db: Database,
   config: Config,
-  scanType: "full" | "alive",
+  scanType: "full" | "alive" | "retry",
   rotateVpn: (oldIp: string) => Promise<string>,
   sendTelegram: (msg: string) => Promise<void>,
   currentIp: string,
@@ -71,6 +85,7 @@ export async function runScan(
   let range: ScanRange;
   let scanId: number;
   let startIndex = 0;
+  let retryRowIdMap: Map<number, number> | null = null;
 
   if (scanType === "alive") {
     const latestScanId = getLatestFinishedScanId(db);
@@ -99,6 +114,28 @@ export async function runScan(
       }
     } else {
       scanId = createScan(db, scanType, range.startId, range.endId);
+    }
+  } else if (scanType === "retry") {
+    const queuedItems = getQueuedRetryIds(db);
+    if (queuedItems.length === 0) {
+      console.log("No retry-queued citizens. Nothing to do.");
+      return;
+    }
+    const citizenIds = queuedItems.map((r) => r.citizen_id);
+    retryRowIdMap = new Map(queuedItems.map((r) => [r.citizen_id, r.id]));
+    range = retryScanRange(citizenIds);
+    const unfinished = getUnfinishedScan(db, "retry");
+    if (unfinished) {
+      scanId = unfinished.id;
+      const cp = getCheckpoint(db, scanId);
+      if (cp) {
+        const idx = citizenIds.indexOf(cp);
+        startIndex = idx >= 0 ? idx + 1 : citizenIds.findIndex((id) => id > cp);
+        if (startIndex < 0) startIndex = citizenIds.length;
+        console.log(`Resuming retry scan ${scanId} from checkpoint: ID ${cp}`);
+      }
+    } else {
+      scanId = createScan(db, "retry", range.startId, range.endId);
     }
   } else {
     range = fullScanRange(config.startId, config.endId, 0);
@@ -154,7 +191,7 @@ export async function runScan(
     }
 
     const citizenId = range.getId(i);
-    const { fetchResult, newIp } = await fetchWithRetry(
+    const { fetchResult, newIp, totalAttempts } = await fetchWithRetry(
       citizenId, ip, config, rotateVpn, sendTelegram,
     );
     if (newIp) ip = newIp;
@@ -188,6 +225,9 @@ export async function runScan(
 
       if (parsed.type === "skip") {
         stats.skipped++;
+        if (parsed.citizenId) {
+          insertOrganization(db, scanId, parsed.citizenId, parsed.name, parsed.createdAt, now);
+        }
       } else {
         const snapshot: SnapshotRow = {
           scan_id: scanId,
@@ -195,6 +235,11 @@ export async function runScan(
           ...parsed.snapshot,
         };
         insertSnapshot(db, snapshot);
+
+        if (scanType === "retry" && retryRowIdMap) {
+          const rowId = retryRowIdMap.get(citizenId);
+          if (rowId !== undefined) markCitizenRetried(db, rowId);
+        }
 
         if (parsed.achievements.length > 0) {
           insertAchievements(db, scanId, citizenId, parsed.achievements);
@@ -207,6 +252,17 @@ export async function runScan(
       }
     } else {
       stats.errors++;
+      insertScanError(db, scanId, citizenId, now,
+        fetchResult.error?.statusCode,
+        fetchResult.error?.message ?? "Unknown error",
+        fetchResult.error?.retryable ?? false,
+      );
+      insertFailedCitizen(
+        db, scanId, citizenId, now,
+        fetchResult.error?.message ?? "Unknown error",
+        fetchResult.error?.statusCode,
+        totalAttempts,
+      );
     }
 
     // Checkpoint + commit transaction at batch intervals

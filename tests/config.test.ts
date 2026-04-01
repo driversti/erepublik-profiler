@@ -25,7 +25,7 @@ describe("loadConfig", () => {
     expect(config.baseDelayMs).toBe(10);
     expect(config.checkpointInterval).toBe(100);
     expect(config.dbPath).toBe("./data/profiler.db");
-    expect(config.apiPort).toBe(3000);
+    expect(config.apiPort).toBe(3434);
     expect(config.homeCountry).toBe("PL");
   });
 

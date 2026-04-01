@@ -61,8 +61,14 @@ function Layout() {
               <NavLink to="/countries" className={navLinkClass}>
                 Countries
               </NavLink>
+              <NavLink to="/players" className={navLinkClass}>
+                Players
+              </NavLink>
               <NavLink to="/search" className={navLinkClass}>
                 Search
+              </NavLink>
+              <NavLink to="/scan" className={navLinkClass}>
+                Scan
               </NavLink>
             </div>
 

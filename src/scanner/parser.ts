@@ -6,18 +6,22 @@ type CitizenResult = {
   achievements: AchievementEntry[];
 };
 
-type SkipResult = { type: "skip" };
+type SkipResult = { type: "skip"; citizenId: number; name: string | null; createdAt: string | null };
 
 export type ParseResult = CitizenResult | SkipResult;
 
 export function parseCitizenResponse(data: any): ParseResult {
   const citizen = data.citizen;
 
-  if (citizen.is_organization) {
-    return { type: "skip" };
+  if (!citizen || typeof citizen !== "object") {
+    return { type: "skip", citizenId: 0, name: null, createdAt: null };
   }
 
-  const banStatus = citizen.banStatus && citizen.banStatus !== false ? citizen.banStatus : null;
+  if (citizen.is_organization) {
+    return { type: "skip", citizenId: citizen.id, name: citizen.name ?? null, createdAt: citizen.created_at ?? null };
+  }
+
+  const banStatus = citizen.banStatus && citizen.banStatus.type ? citizen.banStatus : null;
 
   let status: string;
   if (banStatus) {
@@ -62,7 +66,7 @@ export function parseCitizenResponse(data: any): ParseResult {
     is_president: data.isPresident ? 1 : 0,
     is_congressman: data.isCongressman ? 1 : 0,
     is_dictator: data.isDictator ? 1 : 0,
-    is_party_president: party?.is_party_president ? 1 : 0,
+    is_party_president: data.isPartyPresident ? 1 : 0,
     strength: mil?.strength ?? null,
     division: mil?.divisionData?.division ?? null,
     ground_rank_name: mil?.name ?? null,

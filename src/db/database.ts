@@ -87,6 +87,57 @@ export function initDatabase(dbPath: string): Database {
   `);
 
   db.run(`
+    CREATE TABLE IF NOT EXISTS scan_errors (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      scan_id INTEGER NOT NULL,
+      citizen_id INTEGER NOT NULL,
+      scanned_at TEXT NOT NULL,
+      status_code INTEGER,
+      error_message TEXT NOT NULL,
+      retryable INTEGER NOT NULL,
+      FOREIGN KEY (scan_id) REFERENCES scans(id)
+    )
+  `);
+
+  db.run("CREATE INDEX IF NOT EXISTS idx_scan_errors_scan_id ON scan_errors(scan_id)");
+  db.run("CREATE INDEX IF NOT EXISTS idx_scan_errors_citizen_id ON scan_errors(citizen_id)");
+  db.run("CREATE INDEX IF NOT EXISTS idx_scan_errors_status_code ON scan_errors(status_code)");
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS organizations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      scan_id INTEGER NOT NULL,
+      citizen_id INTEGER NOT NULL,
+      name TEXT,
+      created_at TEXT,
+      scanned_at TEXT NOT NULL,
+      FOREIGN KEY (scan_id) REFERENCES scans(id)
+    )
+  `);
+
+  db.run("CREATE INDEX IF NOT EXISTS idx_organizations_scan_id ON organizations(scan_id)");
+  db.run("CREATE INDEX IF NOT EXISTS idx_organizations_citizen_id ON organizations(citizen_id)");
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS failed_citizens (
+      id               INTEGER PRIMARY KEY AUTOINCREMENT,
+      scan_id          INTEGER NOT NULL,
+      citizen_id       INTEGER NOT NULL,
+      failed_at        TEXT NOT NULL,
+      error_message    TEXT NOT NULL,
+      status_code      INTEGER,
+      retry_count      INTEGER NOT NULL,
+      retry_queued_at  TEXT,
+      retried_at       TEXT,
+      FOREIGN KEY (scan_id) REFERENCES scans(id)
+    )
+  `);
+
+  db.run("CREATE INDEX IF NOT EXISTS idx_failed_citizens_scan_id ON failed_citizens(scan_id)");
+  db.run("CREATE INDEX IF NOT EXISTS idx_failed_citizens_citizen_id ON failed_citizens(citizen_id)");
+  db.run("CREATE INDEX IF NOT EXISTS idx_failed_citizens_retry ON failed_citizens(retry_queued_at, retried_at)");
+
+  db.run(`
     CREATE TABLE IF NOT EXISTS checkpoint (
       scan_id INTEGER PRIMARY KEY,
       last_processed_id INTEGER NOT NULL,

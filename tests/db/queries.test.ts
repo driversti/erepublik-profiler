@@ -12,6 +12,13 @@ import {
   getLatestScanId,
   getAliveCitizenIds,
   incrementScanCounters,
+  insertFailedCitizen,
+  getFailedCitizens,
+  countFailedCitizens,
+  queueFailedCitizensForRetry,
+  queueAllFailedCitizensForRetry,
+  getQueuedRetryIds,
+  markCitizenRetried,
 } from "../../src/db/queries.ts";
 
 const TEST_DB = "./data/test-queries.db";
@@ -179,5 +186,58 @@ describe("getAliveCitizenIds", () => {
 
     const aliveIds = getAliveCitizenIds(db, scanId);
     expect(aliveIds).toEqual([1, 3]);
+  });
+});
+
+describe("failed_citizens", () => {
+  test("insertFailedCitizen stores row", () => {
+    const scanId = createScan(db, "full", 1, 100);
+    const now = new Date().toISOString();
+    insertFailedCitizen(db, scanId, 1001, now, "HTTP 503", 503, 10);
+    const rows = getFailedCitizens(db, scanId, 10, 0);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].citizen_id).toBe(1001);
+    expect(rows[0].status_code).toBe(503);
+    expect(rows[0].retry_count).toBe(10);
+  });
+
+  test("countFailedCitizens returns correct count", () => {
+    const scanId = createScan(db, "full", 1, 100);
+    const now = new Date().toISOString();
+    insertFailedCitizen(db, scanId, 1001, now, "err", null, 5);
+    insertFailedCitizen(db, scanId, 1002, now, "err", 503, 10);
+    expect(countFailedCitizens(db, scanId)).toBe(2);
+    expect(countFailedCitizens(db, null)).toBe(2);
+  });
+
+  test("queueAllFailedCitizensForRetry sets retry_queued_at", () => {
+    const scanId = createScan(db, "full", 1, 100);
+    const now = new Date().toISOString();
+    insertFailedCitizen(db, scanId, 2001, now, "err", null, 5);
+    insertFailedCitizen(db, scanId, 2002, now, "err", null, 5);
+    queueAllFailedCitizensForRetry(db);
+    const items = getQueuedRetryIds(db);
+    expect(items.map((r) => r.citizen_id)).toEqual([2001, 2002]);
+  });
+
+  test("queueFailedCitizensForRetry queues only selected rows by id", () => {
+    const scanId = createScan(db, "full", 1, 100);
+    const now = new Date().toISOString();
+    insertFailedCitizen(db, scanId, 3001, now, "err", null, 5);
+    insertFailedCitizen(db, scanId, 3002, now, "err", null, 5);
+    const rows = getFailedCitizens(db, scanId, 10, 0);
+    queueFailedCitizensForRetry(db, [rows[0].id]);
+    const items = getQueuedRetryIds(db);
+    expect(items.map((r) => r.citizen_id)).toEqual([3001]);
+  });
+
+  test("markCitizenRetried sets retried_at and removes from queue", () => {
+    const scanId = createScan(db, "full", 1, 100);
+    const now = new Date().toISOString();
+    insertFailedCitizen(db, scanId, 4001, now, "err", null, 5);
+    queueAllFailedCitizensForRetry(db);
+    const items = getQueuedRetryIds(db);
+    markCitizenRetried(db, items[0].id);
+    expect(getQueuedRetryIds(db)).toHaveLength(0);
   });
 });

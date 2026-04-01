@@ -42,7 +42,25 @@ function CitizenProfile() {
           <img src={citizen.avatar_url} alt={citizen.name} className="w-16 h-16 rounded-full border-2 border" />
         )}
         <div>
-          <h1 className="text-2xl font-bold text-primary">{citizen.name}</h1>
+          <div className="flex items-center gap-2 mb-1">
+            <h1 className="text-2xl font-bold text-primary">{citizen.name} <span className="text-secondary text-lg font-normal">#{citizenId}</span></h1>
+            <a
+              href={`https://www.erepublik.com/en/citizen/profile/${citizenId}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              title="View on eRepublik"
+            >
+              <img src="https://www.erepublik.com/favicon.ico" alt="eRepublik" className="w-4 h-4" />
+            </a>
+            <a
+              href={`https://erepublik.tools/en/society/citizen/${citizenId}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              title="View on eRepublik Tools"
+            >
+              <img src="https://erepublik.tools/assets/img/favicon.png" alt="eRepublik Tools" className="w-4 h-4" />
+            </a>
+          </div>
           <div className="flex items-center gap-3 text-sm text-secondary">
             <span className={`font-medium ${statusColor}`}>{citizen.status}</span>
             <span>·</span>

@@ -12,5 +12,8 @@
   },
   "dependencies": {
     "got-scraping": "^4.1.2"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0"
   }
 }

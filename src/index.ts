@@ -21,7 +21,8 @@ const telegram = createTelegram(config);
 const vpn = createVpn(config, telegram.send);
 
 if (command === "scan") {
-  const scanType = (process.argv[3] === "alive" ? "alive" : "full") as "full" | "alive";
+  const arg = process.argv[3];
+  const scanType = (["alive", "retry"].includes(arg) ? arg : "full") as "full" | "alive" | "retry";
 
   try {
     const ipInfo = await vpn.checkIpLeak();

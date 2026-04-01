@@ -25,7 +25,7 @@ function Dashboard() {
     { name: 'Not Found', value: stats.total_not_found },
   ].filter((d) => d.value > 0);
 
-  const topCountries = (countries || []).slice(0, 15);
+  const topCountries = (countries || []).slice(0, 10);
 
   return (
     <div>
@@ -62,7 +62,7 @@ function Dashboard() {
         {!countriesLoading && topCountries.length > 0 && (
           <div className="bg-surface rounded-lg border shadow-card p-4">
             <h2 className="text-lg font-semibold text-primary mb-4">Top Countries by Active Players</h2>
-            <ResponsiveContainer width="100%" height={300}>
+            <ResponsiveContainer width="100%" height={Math.max(300, topCountries.length * 28)}>
               <BarChart data={topCountries} layout="vertical" margin={{ left: 80 }}>
                 <XAxis type="number" tick={{ fill: 'var(--color-text-secondary)', fontSize: 12 }} />
                 <YAxis type="category" dataKey="citizenship_country_name" tick={{ fill: 'var(--color-text-secondary)', fontSize: 12 }} width={75} />

@@ -100,3 +100,46 @@ export interface PaginatedResponse<T> {
   results: T[];
   total: number;
 }
+
+export interface PlayerRow {
+  citizen_id: number;
+  name: string | null;
+  level: number | null;
+  xp: number | null;
+  strength: number | null;
+  status: string;
+  citizenship_country_name: string | null;
+  division: number | null;
+  ground_rank_name: string | null;
+}
+
+export interface ScanStatus {
+  state: 'running' | 'idle';
+  scan_id?: number;
+  start_id?: number;
+  end_id?: number;
+  current_id?: number;
+  progress_pct?: number;
+  eta_seconds?: number | null;
+  rate_per_min?: number;
+  stats?: {
+    alive: number;
+    dead: number;
+    banned: number;
+    not_found: number;
+    errors: number;
+  };
+  last_scan?: Scan | null;
+}
+
+export interface FailedCitizen {
+  id: number;
+  scan_id: number;
+  citizen_id: number;
+  failed_at: string;
+  error_message: string;
+  status_code: number | null;
+  retry_count: number;
+  retry_queued_at: string | null;
+  retried_at: string | null;
+}

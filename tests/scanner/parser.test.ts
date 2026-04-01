@@ -24,7 +24,7 @@ const aliveResponse = {
     },
     bestDamageData: { damage: 5000000, battle_id: 99999 },
   },
-  isPresident: false, isCongressman: true, isDictator: false,
+  isPresident: false, isCongressman: true, isDictator: false, isPartyPresident: true,
   friends: { number: 150 },
   newspaper: { id: 200, name: "Test News" },
   pvpStats: { matches_played: 50, matches_won: 30, matches_lost: 20 },

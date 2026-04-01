@@ -2,7 +2,9 @@ import { useQuery } from '@tanstack/react-query';
 import {
   getStats, getCitizen, getCitizenHistory, getCitizenAchievements,
   searchCitizens, getCountries, getCountryStats, getCountryCitizens, getScans,
+  getScanStatus, getFailedCitizens, getPlayers,
 } from './client';
+import type { ScanStatus, FailedCitizen, PlayerRow } from '../types/api';
 
 export function useStats() {
   return useQuery({ queryKey: ['stats'], queryFn: getStats });
@@ -46,4 +48,26 @@ export function useCountryCitizens(id: number, sort = 'level', limit = 50, offse
 
 export function useScans() {
   return useQuery({ queryKey: ['scans'], queryFn: getScans });
+}
+
+export function usePlayers(status = 'all', sort = 'id', order = 'asc', limit = 50, offset = 0) {
+  return useQuery<{ results: PlayerRow[]; total: number }>({
+    queryKey: ['players', status, sort, order, limit, offset],
+    queryFn: () => getPlayers(status, sort, order, limit, offset),
+  });
+}
+
+export function useScanStatus() {
+  return useQuery<ScanStatus>({
+    queryKey: ['scanStatus'],
+    queryFn: getScanStatus,
+    refetchInterval: 3000,
+  });
+}
+
+export function useFailedCitizens(scanId?: number, limit = 50, offset = 0) {
+  return useQuery<{ results: FailedCitizen[]; total: number }>({
+    queryKey: ['failedCitizens', scanId, limit, offset],
+    queryFn: () => getFailedCitizens(scanId, limit, offset),
+  });
 }
