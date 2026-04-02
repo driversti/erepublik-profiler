@@ -73,13 +73,13 @@ export function createVpn(
   async function attemptRotation(): Promise<{ success: boolean; newIp?: string }> {
     try {
       await setVpnStatus("stopped");
-      await Bun.sleep(2000);
+      await Bun.sleep(500);
       await setVpnStatus("running");
 
       const ready = await pollVpnUntilRunning();
       if (!ready) return { success: false };
 
-      await Bun.sleep(2000);
+      await Bun.sleep(500);
       const info = await getCurrentIpInfo();
       return { success: true, newIp: info.ip };
     } catch (err) {

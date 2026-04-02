@@ -1,4 +1,4 @@
-import { useStats, useCountries, useScans } from '../api/hooks';
+import { useStats, useCountries } from '../api/hooks';
 import { formatNumber, formatDateTime } from '../utils/formatters';
 import StatCard from '../components/StatCard';
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
@@ -8,8 +8,6 @@ const STATUS_COLORS = ['#16A34A', '#DC2626', '#CA8A04', '#999999'];
 function Dashboard() {
   const { data: stats, isLoading: statsLoading } = useStats();
   const { data: countries, isLoading: countriesLoading } = useCountries();
-  const { data: scans } = useScans();
-
   if (statsLoading) {
     return <div className="text-secondary">Loading...</div>;
   }
@@ -74,39 +72,6 @@ function Dashboard() {
         )}
       </div>
 
-      {scans && scans.length > 0 && (
-        <div className="mt-8 bg-surface rounded-lg border shadow-card p-4">
-          <h2 className="text-lg font-semibold text-primary mb-4">Recent Scans</h2>
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b text-left text-secondary">
-                <th className="pb-2 font-medium">ID</th>
-                <th className="pb-2 font-medium">Type</th>
-                <th className="pb-2 font-medium">Started</th>
-                <th className="pb-2 font-medium">Finished</th>
-                <th className="pb-2 font-medium text-right">Scanned</th>
-                <th className="pb-2 font-medium text-right">Found</th>
-              </tr>
-            </thead>
-            <tbody>
-              {scans.slice(0, 10).map((scan) => (
-                <tr key={scan.id} className="border-b border-surface-secondary">
-                  <td className="py-2 text-primary">{scan.id}</td>
-                  <td className="py-2">
-                    <span className={`px-2 py-0.5 rounded text-xs font-medium ${scan.scan_type === 'full' ? 'bg-accent-light text-accent' : 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'}`}>
-                      {scan.scan_type}
-                    </span>
-                  </td>
-                  <td className="py-2 text-secondary">{formatDateTime(scan.started_at)}</td>
-                  <td className="py-2 text-secondary">{formatDateTime(scan.finished_at)}</td>
-                  <td className="py-2 text-primary text-right">{formatNumber(scan.total_scanned)}</td>
-                  <td className="py-2 text-primary text-right">{formatNumber(scan.total_found)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
     </div>
   );
 }

@@ -72,22 +72,32 @@ export class ProcessManager {
       return { state: "idle", last_scan: lastScan ?? null };
     }
 
-    // Check heartbeat — if progress hasn't updated in 2 min, scanner may have crashed
-    if (running.progress_updated_at) {
-      const staleSince = Date.now() - new Date(running.progress_updated_at).getTime();
-      if (staleSince > HEARTBEAT_STALE_MS && running.current_id) {
-        // Still report as running but with stale data
-      }
-    }
+    // Use total_scanned from scans table (updates every checkpointInterval=100)
+    // and checkpoint for current position. scan_progress has detailed stats but updates less often.
+    const [checkpoint] = await this.sql`
+      SELECT last_processed_id FROM checkpoint WHERE scan_id = ${running.id}
+    `;
 
     const total = running.end_id - running.start_id + 1;
-    const currentId = running.current_id ?? running.start_id;
-    const processed = currentId - running.start_id + 1;
+    const currentId = checkpoint?.last_processed_id ?? running.current_id ?? running.start_id;
+    const processed = running.total_scanned > 0 ? running.total_scanned : (currentId - running.start_id + 1);
     const progressPct = Math.min(100, Math.round((processed / total) * 1000) / 10);
 
-    const ratePerMin = running.rate_per_min ?? 0;
-    const remainingIds = running.end_id - currentId;
+    // Compute rate from elapsed time + total_scanned (more accurate than scan_progress.rate_per_min)
+    const elapsedMs = Date.now() - new Date(running.started_at).getTime();
+    const elapsedMin = elapsedMs / 60_000;
+    const ratePerMin = elapsedMin > 0.1 ? Math.round(processed / elapsedMin) : (running.rate_per_min ?? 0);
+    const remainingIds = total - processed;
     const etaSec = ratePerMin > 0 ? Math.round((remainingIds / ratePerMin) * 60) : null;
+
+    // Stats from scan_progress (detailed breakdown), or fallback to scans counters
+    const stats = running.current_id ? {
+      alive: running.alive ?? 0,
+      dead: running.dead ?? 0,
+      banned: running.banned ?? 0,
+      not_found: running.not_found ?? 0,
+      errors: running.errors ?? 0,
+    } : undefined;
 
     return {
       state: "running",
@@ -99,13 +109,7 @@ export class ProcessManager {
       progress_pct: progressPct,
       eta_seconds: etaSec,
       rate_per_min: ratePerMin,
-      stats: running.current_id ? {
-        alive: running.alive ?? 0,
-        dead: running.dead ?? 0,
-        banned: running.banned ?? 0,
-        not_found: running.not_found ?? 0,
-        errors: running.errors ?? 0,
-      } : undefined,
+      stats,
     };
   }
 }

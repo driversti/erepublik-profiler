@@ -7,6 +7,7 @@ export interface Scan {
   end_id: number;
   total_scanned: number;
   total_found: number;
+  status: string;
 }
 
 export interface Snapshot {

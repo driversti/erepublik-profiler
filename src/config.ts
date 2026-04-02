@@ -27,9 +27,9 @@ export function loadConfig(): Config {
     homeCountry: process.env.HOME_COUNTRY || "PL",
     gluetunApiUrl: process.env.GLUETUN_API_URL || "http://localhost:8000",
     jitterPercent: 0.3,
-    vpnPollIntervalMs: 2000,
-    vpnPollTimeoutMs: 30000,
-    vpnSleepOnFailureMs: 300_000,
+    vpnPollIntervalMs: 1000,
+    vpnPollTimeoutMs: 15_000,
+    vpnSleepOnFailureMs: 60_000,
     progressEveryN: 10_000,
   };
 }

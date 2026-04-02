@@ -71,6 +71,23 @@ export async function claimPendingScan(sql: Sql): Promise<{ id: number; scan_typ
   return row ?? null;
 }
 
+const STALE_THRESHOLD_MINUTES = 2;
+
+export async function reclaimStaleScan(sql: Sql): Promise<{ id: number; scan_type: string; start_id: number; end_id: number } | null> {
+  const [row] = await sql`
+    UPDATE scans SET status = 'running'
+    WHERE id = (
+      SELECT s.id FROM scans s
+      LEFT JOIN checkpoint cp ON s.id = cp.scan_id
+      WHERE s.status = 'running'
+        AND COALESCE(cp.updated_at, s.started_at) < NOW() - make_interval(mins => ${STALE_THRESHOLD_MINUTES})
+      ORDER BY s.id LIMIT 1
+    )
+    RETURNING id, scan_type, start_id, end_id
+  `;
+  return row ?? null;
+}
+
 export async function getScanStatus(sql: Sql, scanId: number): Promise<string | null> {
   const [row] = await sql`SELECT status FROM scans WHERE id = ${scanId}`;
   return row?.status ?? null;

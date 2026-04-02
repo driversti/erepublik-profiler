@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQueryClient, useMutation } from '@tanstack/react-query';
-import { useScanStatus, useFailedCitizens } from '../api/hooks';
+import { useScanStatus, useFailedCitizens, useScans } from '../api/hooks';
 import { startScan, stopScan, retryFailedCitizens, retryAllFailedCitizens } from '../api/client';
 import { formatNumber, formatDateTime } from '../utils/formatters';
 import Pagination from '../components/Pagination';
@@ -8,6 +8,7 @@ import Pagination from '../components/Pagination';
 function ScanManagement() {
   const queryClient = useQueryClient();
   const { data: status, isLoading: statusLoading } = useScanStatus();
+  const { data: scans } = useScans();
   const [offset, setOffset] = useState(0);
   const limit = 50;
   const { data: failed } = useFailedCitizens(undefined, limit, offset);
@@ -182,6 +183,55 @@ function ScanManagement() {
           </p>
         )}
       </div>
+
+      {/* Scan History */}
+      {scans && scans.length > 0 && (
+        <div className="bg-surface rounded-lg border shadow-card p-4 mb-6">
+          <h2 className="text-lg font-semibold text-primary mb-3">Scan History</h2>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b text-left text-secondary">
+                <th className="pb-2 font-medium">ID</th>
+                <th className="pb-2 font-medium">Type</th>
+                <th className="pb-2 font-medium">Status</th>
+                <th className="pb-2 font-medium">Range</th>
+                <th className="pb-2 font-medium">Started</th>
+                <th className="pb-2 font-medium">Finished</th>
+                <th className="pb-2 font-medium text-right">Scanned</th>
+                <th className="pb-2 font-medium text-right">Found</th>
+              </tr>
+            </thead>
+            <tbody>
+              {scans.map((scan) => (
+                <tr key={scan.id} className="border-b border-surface-secondary">
+                  <td className="py-2 text-primary">{scan.id}</td>
+                  <td className="py-2">
+                    <span className={`px-2 py-0.5 rounded text-xs font-medium ${scan.scan_type === 'full' ? 'bg-accent-light text-accent' : 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'}`}>
+                      {scan.scan_type}
+                    </span>
+                  </td>
+                  <td className="py-2">
+                    <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                      scan.status === 'completed' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' :
+                      scan.status === 'running' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' :
+                      scan.status === 'pending' ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400' :
+                      scan.status === 'cancelled' ? 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400' :
+                      'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                    }`}>
+                      {scan.status}
+                    </span>
+                  </td>
+                  <td className="py-2 text-secondary">{formatNumber(scan.start_id)} – {formatNumber(scan.end_id)}</td>
+                  <td className="py-2 text-secondary">{formatDateTime(scan.started_at)}</td>
+                  <td className="py-2 text-secondary">{formatDateTime(scan.finished_at)}</td>
+                  <td className="py-2 text-primary text-right">{formatNumber(scan.total_scanned)}</td>
+                  <td className="py-2 text-primary text-right">{formatNumber(scan.total_found)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {/* Failed Citizens */}
       <div className="bg-surface rounded-lg border shadow-card p-4">
