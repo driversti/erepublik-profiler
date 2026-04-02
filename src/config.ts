@@ -1,9 +1,7 @@
 export interface Config {
-  startId: number | null;
-  endId: number | null;
+  databaseUrl: string;
   baseDelayMs: number;
   checkpointInterval: number;
-  dbPath: string;
   apiPort: number;
   botToken: string | null;
   chatId: string | null;
@@ -19,11 +17,9 @@ export interface Config {
 
 export function loadConfig(): Config {
   return {
-    startId: process.env.START_ID ? parseInt(process.env.START_ID, 10) : null,
-    endId: process.env.END_ID ? parseInt(process.env.END_ID, 10) : null,
+    databaseUrl: process.env.DATABASE_URL || "postgres://profiler:profiler@localhost:5432/profiler",
     baseDelayMs: parseInt(process.env.BASE_DELAY_MS || "10", 10),
     checkpointInterval: parseInt(process.env.CHECKPOINT_INTERVAL || "100", 10),
-    dbPath: process.env.DB_PATH || "./data/profiler.db",
     apiPort: parseInt(process.env.API_PORT || "3434", 10),
     botToken: process.env.BOT_TOKEN || null,
     chatId: process.env.CHAT_ID || null,

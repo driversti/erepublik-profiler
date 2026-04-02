@@ -1,158 +1,169 @@
-import { Database } from "bun:sqlite";
-import { mkdirSync } from "fs";
-import { dirname } from "path";
+import postgres from "postgres";
 
-export function initDatabase(dbPath: string): Database {
-  mkdirSync(dirname(dbPath), { recursive: true });
-  const db = new Database(dbPath, { create: true });
+export type Sql = postgres.Sql;
 
-  db.run("PRAGMA journal_mode = WAL");
-  db.run("PRAGMA synchronous = NORMAL");
-  db.run("PRAGMA foreign_keys = ON");
+export async function initDatabase(databaseUrl: string): Promise<Sql> {
+  const sql = postgres(databaseUrl, {
+    max: 10,
+    idle_timeout: 20,
+    connect_timeout: 10,
+  });
 
-  db.run(`
+  // Verify connection
+  await sql`SELECT 1`;
+
+  // Create schema
+  await sql`
     CREATE TABLE IF NOT EXISTS scans (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      started_at TEXT NOT NULL,
-      finished_at TEXT,
+      id SERIAL PRIMARY KEY,
+      started_at TIMESTAMPTZ NOT NULL,
+      finished_at TIMESTAMPTZ,
       scan_type TEXT NOT NULL,
-      start_id INTEGER NOT NULL,
-      end_id INTEGER NOT NULL,
-      total_scanned INTEGER NOT NULL DEFAULT 0,
-      total_found INTEGER NOT NULL DEFAULT 0
+      start_id INT NOT NULL,
+      end_id INT NOT NULL,
+      total_scanned INT NOT NULL DEFAULT 0,
+      total_found INT NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'pending'
     )
-  `);
+  `;
 
-  db.run(`
+  await sql`
     CREATE TABLE IF NOT EXISTS snapshots (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      scan_id INTEGER NOT NULL,
-      citizen_id INTEGER NOT NULL,
-      scanned_at TEXT NOT NULL,
+      id SERIAL PRIMARY KEY,
+      scan_id INT NOT NULL REFERENCES scans(id),
+      citizen_id INT NOT NULL,
+      scanned_at TIMESTAMPTZ NOT NULL,
       status TEXT NOT NULL,
-      is_organization INTEGER,
+      is_organization BOOLEAN,
       name TEXT,
-      level INTEGER,
-      xp INTEGER,
+      level INT,
+      xp BIGINT,
       created_at TEXT,
       avatar_url TEXT,
       ban_type TEXT,
       ban_reason TEXT,
-      citizenship_country_id INTEGER,
+      citizenship_country_id INT,
       citizenship_country_name TEXT,
-      residence_country_id INTEGER,
+      residence_country_id INT,
       residence_country_name TEXT,
-      residence_region_id INTEGER,
+      residence_region_id INT,
       residence_region_name TEXT,
-      residence_city_id INTEGER,
+      residence_city_id INT,
       residence_city_name TEXT,
-      party_id INTEGER,
+      party_id INT,
       party_name TEXT,
-      military_unit_id INTEGER,
+      military_unit_id INT,
       military_unit_name TEXT,
-      is_president INTEGER,
-      is_congressman INTEGER,
-      is_dictator INTEGER,
-      is_party_president INTEGER,
-      strength REAL,
-      division INTEGER,
+      is_president BOOLEAN,
+      is_congressman BOOLEAN,
+      is_dictator BOOLEAN,
+      is_party_president BOOLEAN,
+      strength DOUBLE PRECISION,
+      division INT,
       ground_rank_name TEXT,
-      ground_rank_number INTEGER,
-      ground_rank_points REAL,
+      ground_rank_number INT,
+      ground_rank_points DOUBLE PRECISION,
       air_rank_name TEXT,
-      air_rank_number INTEGER,
-      air_rank_points REAL,
-      air_perception REAL,
-      best_damage REAL,
-      best_damage_battle_id INTEGER,
-      friend_count INTEGER,
-      newspaper_id INTEGER,
+      air_rank_number INT,
+      air_rank_points DOUBLE PRECISION,
+      air_perception DOUBLE PRECISION,
+      best_damage DOUBLE PRECISION,
+      best_damage_battle_id INT,
+      friend_count INT,
+      newspaper_id INT,
       newspaper_name TEXT,
-      pvp_matches_played INTEGER,
-      pvp_matches_won INTEGER,
-      pvp_matches_lost INTEGER,
-      FOREIGN KEY (scan_id) REFERENCES scans(id)
+      pvp_matches_played INT,
+      pvp_matches_won INT,
+      pvp_matches_lost INT
     )
-  `);
+  `;
 
-  db.run(`
+  await sql`
     CREATE TABLE IF NOT EXISTS achievements (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      scan_id INTEGER NOT NULL,
-      citizen_id INTEGER NOT NULL,
+      id SERIAL PRIMARY KEY,
+      scan_id INT NOT NULL REFERENCES scans(id),
+      citizen_id INT NOT NULL,
       medal_type TEXT NOT NULL,
-      count INTEGER NOT NULL,
-      FOREIGN KEY (scan_id) REFERENCES scans(id)
+      count INT NOT NULL
     )
-  `);
+  `;
 
-  db.run(`
+  await sql`
     CREATE TABLE IF NOT EXISTS scan_errors (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      scan_id INTEGER NOT NULL,
-      citizen_id INTEGER NOT NULL,
-      scanned_at TEXT NOT NULL,
-      status_code INTEGER,
+      id SERIAL PRIMARY KEY,
+      scan_id INT NOT NULL REFERENCES scans(id),
+      citizen_id INT NOT NULL,
+      scanned_at TIMESTAMPTZ NOT NULL,
+      status_code INT,
       error_message TEXT NOT NULL,
-      retryable INTEGER NOT NULL,
-      FOREIGN KEY (scan_id) REFERENCES scans(id)
+      retryable BOOLEAN NOT NULL
     )
-  `);
+  `;
 
-  db.run("CREATE INDEX IF NOT EXISTS idx_scan_errors_scan_id ON scan_errors(scan_id)");
-  db.run("CREATE INDEX IF NOT EXISTS idx_scan_errors_citizen_id ON scan_errors(citizen_id)");
-  db.run("CREATE INDEX IF NOT EXISTS idx_scan_errors_status_code ON scan_errors(status_code)");
-
-  db.run(`
+  await sql`
     CREATE TABLE IF NOT EXISTS organizations (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      scan_id INTEGER NOT NULL,
-      citizen_id INTEGER NOT NULL,
+      id SERIAL PRIMARY KEY,
+      scan_id INT NOT NULL REFERENCES scans(id),
+      citizen_id INT NOT NULL,
       name TEXT,
       created_at TEXT,
-      scanned_at TEXT NOT NULL,
-      FOREIGN KEY (scan_id) REFERENCES scans(id)
+      scanned_at TIMESTAMPTZ NOT NULL
     )
-  `);
+  `;
 
-  db.run("CREATE INDEX IF NOT EXISTS idx_organizations_scan_id ON organizations(scan_id)");
-  db.run("CREATE INDEX IF NOT EXISTS idx_organizations_citizen_id ON organizations(citizen_id)");
-
-  db.run(`
+  await sql`
     CREATE TABLE IF NOT EXISTS failed_citizens (
-      id               INTEGER PRIMARY KEY AUTOINCREMENT,
-      scan_id          INTEGER NOT NULL,
-      citizen_id       INTEGER NOT NULL,
-      failed_at        TEXT NOT NULL,
-      error_message    TEXT NOT NULL,
-      status_code      INTEGER,
-      retry_count      INTEGER NOT NULL,
-      retry_queued_at  TEXT,
-      retried_at       TEXT,
-      FOREIGN KEY (scan_id) REFERENCES scans(id)
+      id SERIAL PRIMARY KEY,
+      scan_id INT NOT NULL REFERENCES scans(id),
+      citizen_id INT NOT NULL,
+      failed_at TIMESTAMPTZ NOT NULL,
+      error_message TEXT NOT NULL,
+      status_code INT,
+      retry_count INT NOT NULL,
+      retry_queued_at TIMESTAMPTZ,
+      retried_at TIMESTAMPTZ
     )
-  `);
+  `;
 
-  db.run("CREATE INDEX IF NOT EXISTS idx_failed_citizens_scan_id ON failed_citizens(scan_id)");
-  db.run("CREATE INDEX IF NOT EXISTS idx_failed_citizens_citizen_id ON failed_citizens(citizen_id)");
-  db.run("CREATE INDEX IF NOT EXISTS idx_failed_citizens_retry ON failed_citizens(retry_queued_at, retried_at)");
-
-  db.run(`
+  await sql`
     CREATE TABLE IF NOT EXISTS checkpoint (
-      scan_id INTEGER PRIMARY KEY,
-      last_processed_id INTEGER NOT NULL,
-      updated_at TEXT NOT NULL,
-      FOREIGN KEY (scan_id) REFERENCES scans(id)
+      scan_id INT PRIMARY KEY REFERENCES scans(id),
+      last_processed_id INT NOT NULL,
+      updated_at TIMESTAMPTZ NOT NULL
     )
-  `);
+  `;
 
-  db.run("CREATE INDEX IF NOT EXISTS idx_snapshots_citizen_id ON snapshots(citizen_id)");
-  db.run("CREATE INDEX IF NOT EXISTS idx_snapshots_scan_id ON snapshots(scan_id)");
-  db.run("CREATE INDEX IF NOT EXISTS idx_snapshots_citizen_scan ON snapshots(citizen_id, scan_id)");
-  db.run("CREATE INDEX IF NOT EXISTS idx_snapshots_status ON snapshots(status)");
-  db.run("CREATE INDEX IF NOT EXISTS idx_snapshots_citizenship ON snapshots(citizenship_country_id)");
-  db.run("CREATE INDEX IF NOT EXISTS idx_achievements_citizen ON achievements(citizen_id, scan_id)");
-  db.run("CREATE INDEX IF NOT EXISTS idx_achievements_medal ON achievements(medal_type)");
+  await sql`
+    CREATE TABLE IF NOT EXISTS scan_progress (
+      scan_id INT PRIMARY KEY REFERENCES scans(id),
+      current_id INT NOT NULL,
+      alive INT NOT NULL DEFAULT 0,
+      dead INT NOT NULL DEFAULT 0,
+      banned INT NOT NULL DEFAULT 0,
+      not_found INT NOT NULL DEFAULT 0,
+      errors INT NOT NULL DEFAULT 0,
+      skipped INT NOT NULL DEFAULT 0,
+      rate_per_min INT,
+      updated_at TIMESTAMPTZ NOT NULL
+    )
+  `;
 
-  return db;
+  // Indexes
+  await sql`CREATE INDEX IF NOT EXISTS idx_snapshots_citizen_id ON snapshots(citizen_id)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_snapshots_scan_id ON snapshots(scan_id)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_snapshots_citizen_scan ON snapshots(citizen_id, scan_id)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_snapshots_status ON snapshots(status)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_snapshots_citizenship ON snapshots(citizenship_country_id)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_achievements_citizen ON achievements(citizen_id, scan_id)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_achievements_medal ON achievements(medal_type)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_scan_errors_scan_id ON scan_errors(scan_id)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_scan_errors_citizen_id ON scan_errors(citizen_id)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_scan_errors_status_code ON scan_errors(status_code)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_organizations_scan_id ON organizations(scan_id)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_organizations_citizen_id ON organizations(citizen_id)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_failed_citizens_scan_id ON failed_citizens(scan_id)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_failed_citizens_citizen_id ON failed_citizens(citizen_id)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_failed_citizens_retry ON failed_citizens(retry_queued_at, retried_at)`;
+
+  return sql;
 }

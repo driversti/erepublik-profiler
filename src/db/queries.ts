@@ -1,11 +1,11 @@
-import { Database } from "bun:sqlite";
+import type { Sql } from "./database.ts";
 
 export interface SnapshotRow {
   scan_id: number;
   citizen_id: number;
   scanned_at: string;
   status: string;
-  is_organization: number | null;
+  is_organization: boolean | null;
   name: string | null;
   level: number | null;
   xp: number | null;
@@ -25,10 +25,10 @@ export interface SnapshotRow {
   party_name: string | null;
   military_unit_id: number | null;
   military_unit_name: string | null;
-  is_president: number | null;
-  is_congressman: number | null;
-  is_dictator: number | null;
-  is_party_president: number | null;
+  is_president: boolean | null;
+  is_congressman: boolean | null;
+  is_dictator: boolean | null;
+  is_party_president: boolean | null;
   strength: number | null;
   division: number | null;
   ground_rank_name: string | null;
@@ -53,24 +53,50 @@ export interface AchievementEntry {
   count: number;
 }
 
-export function createScan(db: Database, scanType: string, startId: number, endId: number): number {
-  const result = db
-    .query("INSERT INTO scans (started_at, scan_type, start_id, end_id) VALUES (?, ?, ?, ?)")
-    .run(new Date().toISOString(), scanType, startId, endId);
-  return Number(result.lastInsertRowid);
+export async function createScan(sql: Sql, scanType: string, startId: number, endId: number): Promise<number> {
+  const [row] = await sql`
+    INSERT INTO scans (started_at, scan_type, start_id, end_id, status)
+    VALUES (NOW(), ${scanType}, ${startId}, ${endId}, 'pending')
+    RETURNING id
+  `;
+  return row.id;
 }
 
-export function finishScan(db: Database, scanId: number): void {
-  db.query("UPDATE scans SET finished_at = ? WHERE id = ?").run(new Date().toISOString(), scanId);
+export async function claimPendingScan(sql: Sql): Promise<{ id: number; scan_type: string; start_id: number; end_id: number } | null> {
+  const [row] = await sql`
+    UPDATE scans SET status = 'running', started_at = NOW()
+    WHERE id = (SELECT id FROM scans WHERE status = 'pending' ORDER BY id LIMIT 1)
+    RETURNING id, scan_type, start_id, end_id
+  `;
+  return row ?? null;
 }
 
-export function incrementScanCounters(db: Database, scanId: number, counts: { scanned: number; found: number }): void {
-  db.query("UPDATE scans SET total_scanned = total_scanned + ?, total_found = total_found + ? WHERE id = ?")
-    .run(counts.scanned, counts.found, scanId);
+export async function getScanStatus(sql: Sql, scanId: number): Promise<string | null> {
+  const [row] = await sql`SELECT status FROM scans WHERE id = ${scanId}`;
+  return row?.status ?? null;
 }
 
-export function insertSnapshot(db: Database, row: SnapshotRow): void {
-  db.query(`
+export async function updateScanStatus(sql: Sql, scanId: number, status: string): Promise<void> {
+  if (status === "completed" || status === "cancelled" || status === "failed") {
+    await sql`UPDATE scans SET status = ${status}, finished_at = NOW() WHERE id = ${scanId}`;
+  } else {
+    await sql`UPDATE scans SET status = ${status} WHERE id = ${scanId}`;
+  }
+}
+
+export async function finishScan(sql: Sql, scanId: number): Promise<void> {
+  await sql`UPDATE scans SET finished_at = NOW(), status = 'completed' WHERE id = ${scanId}`;
+}
+
+export async function incrementScanCounters(sql: Sql, scanId: number, counts: { scanned: number; found: number }): Promise<void> {
+  await sql`
+    UPDATE scans SET total_scanned = total_scanned + ${counts.scanned}, total_found = total_found + ${counts.found}
+    WHERE id = ${scanId}
+  `;
+}
+
+export async function insertSnapshot(sql: Sql, row: SnapshotRow): Promise<void> {
+  await sql`
     INSERT INTO snapshots (
       scan_id, citizen_id, scanned_at, status, is_organization,
       name, level, xp, created_at, avatar_url, ban_type, ban_reason,
@@ -87,100 +113,107 @@ export function insertSnapshot(db: Database, row: SnapshotRow): void {
       friend_count, newspaper_id, newspaper_name,
       pvp_matches_played, pvp_matches_won, pvp_matches_lost
     ) VALUES (
-      $scan_id, $citizen_id, $scanned_at, $status, $is_organization,
-      $name, $level, $xp, $created_at, $avatar_url, $ban_type, $ban_reason,
-      $citizenship_country_id, $citizenship_country_name,
-      $residence_country_id, $residence_country_name,
-      $residence_region_id, $residence_region_name,
-      $residence_city_id, $residence_city_name,
-      $party_id, $party_name, $military_unit_id, $military_unit_name,
-      $is_president, $is_congressman, $is_dictator, $is_party_president,
-      $strength, $division,
-      $ground_rank_name, $ground_rank_number, $ground_rank_points,
-      $air_rank_name, $air_rank_number, $air_rank_points, $air_perception,
-      $best_damage, $best_damage_battle_id,
-      $friend_count, $newspaper_id, $newspaper_name,
-      $pvp_matches_played, $pvp_matches_won, $pvp_matches_lost
+      ${row.scan_id}, ${row.citizen_id}, ${row.scanned_at}, ${row.status}, ${row.is_organization},
+      ${row.name}, ${row.level}, ${row.xp}, ${row.created_at}, ${row.avatar_url},
+      ${row.ban_type}, ${row.ban_reason},
+      ${row.citizenship_country_id}, ${row.citizenship_country_name},
+      ${row.residence_country_id}, ${row.residence_country_name},
+      ${row.residence_region_id}, ${row.residence_region_name},
+      ${row.residence_city_id}, ${row.residence_city_name},
+      ${row.party_id}, ${row.party_name}, ${row.military_unit_id}, ${row.military_unit_name},
+      ${row.is_president}, ${row.is_congressman}, ${row.is_dictator}, ${row.is_party_president},
+      ${row.strength}, ${row.division},
+      ${row.ground_rank_name}, ${row.ground_rank_number}, ${row.ground_rank_points},
+      ${row.air_rank_name}, ${row.air_rank_number}, ${row.air_rank_points}, ${row.air_perception},
+      ${row.best_damage}, ${row.best_damage_battle_id},
+      ${row.friend_count}, ${row.newspaper_id}, ${row.newspaper_name},
+      ${row.pvp_matches_played}, ${row.pvp_matches_won}, ${row.pvp_matches_lost}
     )
-  `).run({
-    $scan_id: row.scan_id, $citizen_id: row.citizen_id, $scanned_at: row.scanned_at,
-    $status: row.status, $is_organization: row.is_organization,
-    $name: row.name, $level: row.level, $xp: row.xp,
-    $created_at: row.created_at, $avatar_url: row.avatar_url,
-    $ban_type: row.ban_type, $ban_reason: row.ban_reason,
-    $citizenship_country_id: row.citizenship_country_id, $citizenship_country_name: row.citizenship_country_name,
-    $residence_country_id: row.residence_country_id, $residence_country_name: row.residence_country_name,
-    $residence_region_id: row.residence_region_id, $residence_region_name: row.residence_region_name,
-    $residence_city_id: row.residence_city_id, $residence_city_name: row.residence_city_name,
-    $party_id: row.party_id, $party_name: row.party_name,
-    $military_unit_id: row.military_unit_id, $military_unit_name: row.military_unit_name,
-    $is_president: row.is_president, $is_congressman: row.is_congressman,
-    $is_dictator: row.is_dictator, $is_party_president: row.is_party_president,
-    $strength: row.strength, $division: row.division,
-    $ground_rank_name: row.ground_rank_name, $ground_rank_number: row.ground_rank_number,
-    $ground_rank_points: row.ground_rank_points,
-    $air_rank_name: row.air_rank_name, $air_rank_number: row.air_rank_number,
-    $air_rank_points: row.air_rank_points, $air_perception: row.air_perception,
-    $best_damage: row.best_damage, $best_damage_battle_id: row.best_damage_battle_id,
-    $friend_count: row.friend_count, $newspaper_id: row.newspaper_id, $newspaper_name: row.newspaper_name,
-    $pvp_matches_played: row.pvp_matches_played, $pvp_matches_won: row.pvp_matches_won,
-    $pvp_matches_lost: row.pvp_matches_lost,
-  });
+  `;
 }
 
-export function insertAchievements(db: Database, scanId: number, citizenId: number, achievements: AchievementEntry[]): void {
-  const stmt = db.query("INSERT INTO achievements (scan_id, citizen_id, medal_type, count) VALUES (?, ?, ?, ?)");
-  for (const a of achievements) {
-    stmt.run(scanId, citizenId, a.medal_type, a.count);
+export async function insertSnapshotBatch(sql: Sql, rows: SnapshotRow[]): Promise<void> {
+  if (rows.length === 0) return;
+  for (const row of rows) {
+    await insertSnapshot(sql, row);
   }
 }
 
-export function insertScanError(db: Database, scanId: number, citizenId: number, scannedAt: string, statusCode: number | null | undefined, errorMessage: string, retryable: boolean): void {
-  db.query("INSERT INTO scan_errors (scan_id, citizen_id, scanned_at, status_code, error_message, retryable) VALUES (?, ?, ?, ?, ?, ?)")
-    .run(scanId, citizenId, scannedAt, statusCode ?? null, errorMessage, retryable ? 1 : 0);
+export async function insertAchievements(sql: Sql, scanId: number, citizenId: number, achievements: AchievementEntry[]): Promise<void> {
+  for (const a of achievements) {
+    await sql`INSERT INTO achievements (scan_id, citizen_id, medal_type, count) VALUES (${scanId}, ${citizenId}, ${a.medal_type}, ${a.count})`;
+  }
 }
 
-export function insertOrganization(db: Database, scanId: number, citizenId: number, name: string | null, createdAt: string | null, scannedAt: string): void {
-  db.query("INSERT INTO organizations (scan_id, citizen_id, name, created_at, scanned_at) VALUES (?, ?, ?, ?, ?)")
-    .run(scanId, citizenId, name, createdAt, scannedAt);
+export async function insertScanError(sql: Sql, scanId: number, citizenId: number, scannedAt: string, statusCode: number | null | undefined, errorMessage: string, retryable: boolean): Promise<void> {
+  await sql`
+    INSERT INTO scan_errors (scan_id, citizen_id, scanned_at, status_code, error_message, retryable)
+    VALUES (${scanId}, ${citizenId}, ${scannedAt}, ${statusCode ?? null}, ${errorMessage}, ${retryable})
+  `;
 }
 
-export function getCheckpoint(db: Database, scanId: number): number | null {
-  const row = db.query("SELECT last_processed_id FROM checkpoint WHERE scan_id = ?").get(scanId) as { last_processed_id: number } | null;
+export async function insertOrganization(sql: Sql, scanId: number, citizenId: number, name: string | null, createdAt: string | null, scannedAt: string): Promise<void> {
+  await sql`
+    INSERT INTO organizations (scan_id, citizen_id, name, created_at, scanned_at)
+    VALUES (${scanId}, ${citizenId}, ${name}, ${createdAt}, ${scannedAt})
+  `;
+}
+
+export async function getCheckpoint(sql: Sql, scanId: number): Promise<number | null> {
+  const [row] = await sql`SELECT last_processed_id FROM checkpoint WHERE scan_id = ${scanId}`;
   return row?.last_processed_id ?? null;
 }
 
-export function saveCheckpoint(db: Database, scanId: number, lastProcessedId: number): void {
-  db.query(`
+export async function saveCheckpoint(sql: Sql, scanId: number, lastProcessedId: number): Promise<void> {
+  await sql`
     INSERT INTO checkpoint (scan_id, last_processed_id, updated_at)
-    VALUES (?, ?, ?)
-    ON CONFLICT(scan_id) DO UPDATE SET
-      last_processed_id = excluded.last_processed_id,
-      updated_at = excluded.updated_at
-  `).run(scanId, lastProcessedId, new Date().toISOString());
+    VALUES (${scanId}, ${lastProcessedId}, NOW())
+    ON CONFLICT (scan_id) DO UPDATE SET
+      last_processed_id = EXCLUDED.last_processed_id,
+      updated_at = NOW()
+  `;
 }
 
-export function getLatestScanId(db: Database): number | null {
-  const row = db.query("SELECT id FROM scans ORDER BY id DESC LIMIT 1").get() as { id: number } | null;
-  return row?.id ?? null;
+export async function upsertScanProgress(
+  sql: Sql,
+  scanId: number,
+  currentId: number,
+  stats: { alive: number; dead: number; banned: number; notFound: number; errors: number; skipped: number },
+  ratePerMin: number,
+): Promise<void> {
+  await sql`
+    INSERT INTO scan_progress (scan_id, current_id, alive, dead, banned, not_found, errors, skipped, rate_per_min, updated_at)
+    VALUES (${scanId}, ${currentId}, ${stats.alive}, ${stats.dead}, ${stats.banned}, ${stats.notFound}, ${stats.errors}, ${stats.skipped}, ${ratePerMin}, NOW())
+    ON CONFLICT (scan_id) DO UPDATE SET
+      current_id = EXCLUDED.current_id,
+      alive = EXCLUDED.alive,
+      dead = EXCLUDED.dead,
+      banned = EXCLUDED.banned,
+      not_found = EXCLUDED.not_found,
+      errors = EXCLUDED.errors,
+      skipped = EXCLUDED.skipped,
+      rate_per_min = EXCLUDED.rate_per_min,
+      updated_at = NOW()
+  `;
 }
 
-export function getUnfinishedScan(db: Database, scanType: string): { id: number; start_id: number; end_id: number } | null {
-  const row = db.query(
-    "SELECT id, start_id, end_id FROM scans WHERE scan_type = ? AND finished_at IS NULL ORDER BY id DESC LIMIT 1"
-  ).get(scanType) as { id: number; start_id: number; end_id: number } | null;
+export async function getUnfinishedScan(sql: Sql, scanType: string): Promise<{ id: number; start_id: number; end_id: number } | null> {
+  const [row] = await sql`
+    SELECT id, start_id, end_id FROM scans
+    WHERE scan_type = ${scanType} AND status = 'running'
+    ORDER BY id DESC LIMIT 1
+  `;
   return row ?? null;
 }
 
-
-export function getAliveCitizenIds(db: Database): number[] {
-  const rows = db.query(`
+export async function getAliveCitizenIds(sql: Sql): Promise<number[]> {
+  const rows = await sql`
     SELECT citizen_id FROM snapshots s
     WHERE status = 'alive'
       AND scan_id = (SELECT MAX(scan_id) FROM snapshots WHERE citizen_id = s.citizen_id)
     ORDER BY citizen_id
-  `).all() as { citizen_id: number }[];
-  return rows.map((r) => r.citizen_id);
+  `;
+  return rows.map((r: any) => r.citizen_id);
 }
 
 export interface FailedCitizenRow {
@@ -195,62 +228,54 @@ export interface FailedCitizenRow {
   retried_at: string | null;
 }
 
-export function insertFailedCitizen(
-  db: Database,
-  scanId: number,
-  citizenId: number,
-  failedAt: string,
-  errorMessage: string,
-  statusCode: number | null | undefined,
-  retryCount: number,
-): void {
-  db.query(
-    "INSERT INTO failed_citizens (scan_id, citizen_id, failed_at, error_message, status_code, retry_count) VALUES (?, ?, ?, ?, ?, ?)"
-  ).run(scanId, citizenId, failedAt, errorMessage, statusCode ?? null, retryCount);
+export async function insertFailedCitizen(
+  sql: Sql, scanId: number, citizenId: number, failedAt: string,
+  errorMessage: string, statusCode: number | null | undefined, retryCount: number,
+): Promise<void> {
+  await sql`
+    INSERT INTO failed_citizens (scan_id, citizen_id, failed_at, error_message, status_code, retry_count)
+    VALUES (${scanId}, ${citizenId}, ${failedAt}, ${errorMessage}, ${statusCode ?? null}, ${retryCount})
+  `;
 }
 
-export function getFailedCitizens(
-  db: Database,
-  scanId: number | null,
-  limit: number,
-  offset: number,
-): FailedCitizenRow[] {
+export async function getFailedCitizens(sql: Sql, scanId: number | null, limit: number, offset: number): Promise<FailedCitizenRow[]> {
   if (scanId !== null) {
-    return db.query(
-      "SELECT * FROM failed_citizens WHERE scan_id = ? ORDER BY citizen_id LIMIT ? OFFSET ?"
-    ).all(scanId, limit, offset) as FailedCitizenRow[];
+    return await sql`SELECT * FROM failed_citizens WHERE scan_id = ${scanId} ORDER BY citizen_id LIMIT ${limit} OFFSET ${offset}`;
   }
-  return db.query(
-    "SELECT * FROM failed_citizens ORDER BY citizen_id LIMIT ? OFFSET ?"
-  ).all(limit, offset) as FailedCitizenRow[];
+  return await sql`SELECT * FROM failed_citizens ORDER BY citizen_id LIMIT ${limit} OFFSET ${offset}`;
 }
 
-export function countFailedCitizens(db: Database, scanId: number | null): number {
-  const row = scanId !== null
-    ? db.query("SELECT COUNT(*) AS count FROM failed_citizens WHERE scan_id = ?").get(scanId) as { count: number }
-    : db.query("SELECT COUNT(*) AS count FROM failed_citizens").get() as { count: number };
-  return row.count;
+export async function countFailedCitizens(sql: Sql, scanId: number | null): Promise<number> {
+  if (scanId !== null) {
+    const [row] = await sql`SELECT COUNT(*) AS count FROM failed_citizens WHERE scan_id = ${scanId}`;
+    return Number(row.count);
+  }
+  const [row] = await sql`SELECT COUNT(*) AS count FROM failed_citizens`;
+  return Number(row.count);
 }
 
-export function queueFailedCitizensForRetry(db: Database, ids: number[]): void {
-  const now = new Date().toISOString();
-  const stmt = db.query("UPDATE failed_citizens SET retry_queued_at = ? WHERE id = ? AND retry_queued_at IS NULL AND retried_at IS NULL");
-  for (const id of ids) stmt.run(now, id);
+export async function queueFailedCitizensForRetry(sql: Sql, ids: number[]): Promise<void> {
+  await sql`
+    UPDATE failed_citizens SET retry_queued_at = NOW()
+    WHERE id = ANY(${ids}) AND retry_queued_at IS NULL AND retried_at IS NULL
+  `;
 }
 
-export function queueAllFailedCitizensForRetry(db: Database): void {
-  db.query("UPDATE failed_citizens SET retry_queued_at = ? WHERE retry_queued_at IS NULL AND retried_at IS NULL")
-    .run(new Date().toISOString());
+export async function queueAllFailedCitizensForRetry(sql: Sql): Promise<void> {
+  await sql`UPDATE failed_citizens SET retry_queued_at = NOW() WHERE retry_queued_at IS NULL AND retried_at IS NULL`;
 }
 
-export function getQueuedRetryIds(db: Database): { id: number; citizen_id: number }[] {
-  return db.query(
-    "SELECT id, citizen_id FROM failed_citizens WHERE retry_queued_at IS NOT NULL AND retried_at IS NULL ORDER BY citizen_id"
-  ).all() as { id: number; citizen_id: number }[];
+export async function getQueuedRetryIds(sql: Sql): Promise<{ id: number; citizen_id: number }[]> {
+  return await sql`
+    SELECT id, citizen_id FROM failed_citizens
+    WHERE retry_queued_at IS NOT NULL AND retried_at IS NULL
+    ORDER BY citizen_id
+  `;
 }
 
-export function markCitizenRetried(db: Database, id: number): void {
-  db.query(
-    "UPDATE failed_citizens SET retried_at = ? WHERE id = ? AND retry_queued_at IS NOT NULL AND retried_at IS NULL"
-  ).run(new Date().toISOString(), id);
+export async function markCitizenRetried(sql: Sql, id: number): Promise<void> {
+  await sql`
+    UPDATE failed_citizens SET retried_at = NOW()
+    WHERE id = ${id} AND retry_queued_at IS NOT NULL AND retried_at IS NULL
+  `;
 }

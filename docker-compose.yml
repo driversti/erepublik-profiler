@@ -1,46 +1,32 @@
-services:
-  profiler-web:
-    image: registry.yurii.live/profiler:latest
-    container_name: profiler-web
-    restart: unless-stopped
-    command: ["bun", "run", "src/index.ts", "web"]
-    environment:
-      - DB_PATH=/app/data/profiler.db
-      - API_PORT=3000
-    volumes:
-      - ./data:/app/data
-    depends_on:
-      gluetun:
-        condition: service_healthy
-    network_mode: "service:gluetun"
+networks:
+  db:
+    driver: bridge
 
-  profiler-scanner:
-    image: registry.yurii.live/profiler:latest
-    container_name: profiler-scanner
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: profiler-postgres
     restart: unless-stopped
-    command: ["bun", "run", "src/index.ts", "scan"]
+    networks: [db]
     environment:
-      - START_ID=${START_ID}
-      - END_ID=${END_ID}
-      - BASE_DELAY_MS=${BASE_DELAY_MS:-10}
-      - CHECKPOINT_INTERVAL=${CHECKPOINT_INTERVAL:-100}
-      - DB_PATH=/app/data/profiler.db
-      - BOT_TOKEN=${BOT_TOKEN}
-      - CHAT_ID=${CHAT_ID}
-      - TOPIC_ID=${TOPIC_ID}
-      - HOME_COUNTRY=${HOME_COUNTRY:-PL}
+      POSTGRES_DB: profiler
+      POSTGRES_USER: profiler
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "5432:5432"
     volumes:
-      - ./data:/app/data
-    depends_on:
-      gluetun:
-        condition: service_healthy
-    network_mode: "service:gluetun"
-    profiles:
-      - scan
+      - ./pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U profiler"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   gluetun:
     image: qmcgaw/gluetun
     container_name: gluetun-profiler
+    restart: unless-stopped
+    networks: [db]
     cap_add:
       - NET_ADMIN
     devices:
@@ -59,10 +45,45 @@ services:
       - "8000:8000"
     volumes:
       - ./gluetun:/gluetun
-    restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://www.google.com"]
       interval: 30s
       timeout: 10s
       start_period: 60s
       retries: 3
+
+  profiler-web:
+    image: registry.yurii.live/profiler:latest
+    container_name: profiler-web
+    restart: unless-stopped
+    command: ["bun", "run", "src/index.ts", "web"]
+    environment:
+      - DATABASE_URL=postgres://profiler:${POSTGRES_PASSWORD}@postgres:5432/profiler
+      - API_PORT=3000
+    depends_on:
+      postgres:
+        condition: service_healthy
+      gluetun:
+        condition: service_healthy
+    network_mode: "service:gluetun"
+
+  profiler-scanner:
+    image: registry.yurii.live/profiler:latest
+    container_name: profiler-scanner
+    restart: unless-stopped
+    command: ["bun", "run", "src/index.ts", "scan"]
+    environment:
+      - DATABASE_URL=postgres://profiler:${POSTGRES_PASSWORD}@postgres:5432/profiler
+      - BASE_DELAY_MS=${BASE_DELAY_MS:-10}
+      - CHECKPOINT_INTERVAL=${CHECKPOINT_INTERVAL:-100}
+      - BOT_TOKEN=${BOT_TOKEN}
+      - CHAT_ID=${CHAT_ID}
+      - TOPIC_ID=${TOPIC_ID}
+      - HOME_COUNTRY=${HOME_COUNTRY:-PL}
+      - GLUETUN_API_URL=http://localhost:8000
+    depends_on:
+      postgres:
+        condition: service_healthy
+      gluetun:
+        condition: service_healthy
+    network_mode: "service:gluetun"

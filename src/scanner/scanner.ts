@@ -1,9 +1,6 @@
-import type { Database } from "bun:sqlite";
+import type { Sql } from "../db/database.ts";
 import type { Config } from "../config.ts";
-
-type ScanConfig = Config & { startId: number; endId: number };
 import {
-  createScan,
   finishScan,
   insertSnapshot,
   insertAchievements,
@@ -17,6 +14,9 @@ import {
   getAliveCitizenIds,
   getQueuedRetryIds,
   markCitizenRetried,
+  getScanStatus,
+  updateScanStatus,
+  upsertScanProgress,
   type SnapshotRow,
 } from "../db/queries.ts";
 import { parseCitizenResponse } from "./parser.ts";
@@ -35,7 +35,7 @@ const MIN_SUCCESSES_BEFORE_FAST = 100;
 class Throttle {
   private baseDelayMs: number;
   private jitterPercent: number;
-  private requestsSinceRotation = Infinity; // start fast — no cooldown needed
+  private requestsSinceRotation = Infinity;
   private successesSinceRotation = 0;
   private consecutiveQuickBlocks = 0;
 
@@ -84,10 +84,6 @@ function formatDuration(ms: number): string {
   return hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
 }
 
-/**
- * Iterates citizen IDs for a scan. For full scans, yields sequential IDs
- * without allocating an array. For alive scans, uses the pre-fetched ID list.
- */
 interface ScanRange {
   totalCount: number;
   startId: number;
@@ -95,7 +91,7 @@ interface ScanRange {
   getId(index: number): number;
 }
 
-function fullScanRange(startId: number, endId: number, resumeFromIndex: number): ScanRange {
+function fullScanRange(startId: number, endId: number): ScanRange {
   return {
     totalCount: endId - startId + 1,
     startId,
@@ -123,77 +119,62 @@ function retryScanRange(citizenIds: number[]): ScanRange {
 }
 
 export async function runScan(
-  db: Database,
-  config: ScanConfig,
+  sql: Sql,
+  config: Config,
+  scanId: number,
   scanType: "full" | "alive" | "retry",
+  startId: number,
+  endId: number,
   rotateVpn: (oldIp: string) => Promise<string>,
   sendTelegram: (msg: string) => Promise<void>,
   currentIp: string,
 ): Promise<void> {
   let range: ScanRange;
-  let scanId: number;
   let startIndex = 0;
   let retryRowIdMap: Map<number, number> | null = null;
 
   if (scanType === "alive") {
-    const citizenIds = getAliveCitizenIds(db);
+    const citizenIds = await getAliveCitizenIds(sql);
     if (citizenIds.length === 0) {
       console.log("No alive citizens found.");
+      await updateScanStatus(sql, scanId, "completed");
       return;
     }
     range = aliveScanRange(citizenIds);
     console.log(`Alive scan: ${citizenIds.length} citizens to re-scan`);
 
-    // Resume unfinished alive scan or create new one
-    const unfinished = getUnfinishedScan(db, "alive");
-    if (unfinished) {
-      scanId = unfinished.id;
-      const cp = getCheckpoint(db, scanId);
-      if (cp) {
-        const idx = citizenIds.indexOf(cp);
-        startIndex = idx >= 0 ? idx + 1 : citizenIds.findIndex((id) => id > cp);
-        if (startIndex < 0) startIndex = citizenIds.length;
-        console.log(`Resuming alive scan ${scanId} from checkpoint: ID ${cp}`);
-      }
-    } else {
-      scanId = createScan(db, scanType, range.startId, range.endId);
+    const cp = await getCheckpoint(sql, scanId);
+    if (cp) {
+      const idx = citizenIds.indexOf(cp);
+      startIndex = idx >= 0 ? idx + 1 : citizenIds.findIndex((id) => id > cp);
+      if (startIndex < 0) startIndex = citizenIds.length;
+      console.log(`Resuming alive scan ${scanId} from checkpoint: ID ${cp}`);
     }
   } else if (scanType === "retry") {
-    const queuedItems = getQueuedRetryIds(db);
+    const queuedItems = await getQueuedRetryIds(sql);
     if (queuedItems.length === 0) {
       console.log("No retry-queued citizens. Nothing to do.");
+      await updateScanStatus(sql, scanId, "completed");
       return;
     }
     const citizenIds = queuedItems.map((r) => r.citizen_id);
     retryRowIdMap = new Map(queuedItems.map((r) => [r.citizen_id, r.id]));
     range = retryScanRange(citizenIds);
-    const unfinished = getUnfinishedScan(db, "retry");
-    if (unfinished) {
-      scanId = unfinished.id;
-      const cp = getCheckpoint(db, scanId);
-      if (cp) {
-        const idx = citizenIds.indexOf(cp);
-        startIndex = idx >= 0 ? idx + 1 : citizenIds.findIndex((id) => id > cp);
-        if (startIndex < 0) startIndex = citizenIds.length;
-        console.log(`Resuming retry scan ${scanId} from checkpoint: ID ${cp}`);
-      }
-    } else {
-      scanId = createScan(db, "retry", range.startId, range.endId);
+
+    const cp = await getCheckpoint(sql, scanId);
+    if (cp) {
+      const idx = citizenIds.indexOf(cp);
+      startIndex = idx >= 0 ? idx + 1 : citizenIds.findIndex((id) => id > cp);
+      if (startIndex < 0) startIndex = citizenIds.length;
+      console.log(`Resuming retry scan ${scanId} from checkpoint: ID ${cp}`);
     }
   } else {
-    range = fullScanRange(config.startId, config.endId, 0);
+    range = fullScanRange(startId, endId);
 
-    // Resume unfinished full scan or create new one
-    const unfinished = getUnfinishedScan(db, "full");
-    if (unfinished) {
-      scanId = unfinished.id;
-      const cp = getCheckpoint(db, scanId);
-      if (cp) {
-        startIndex = cp - config.startId + 1;
-        console.log(`Resuming full scan ${scanId} from checkpoint: ID ${cp}`);
-      }
-    } else {
-      scanId = createScan(db, scanType, config.startId, config.endId);
+    const cp = await getCheckpoint(sql, scanId);
+    if (cp) {
+      startIndex = cp - startId + 1;
+      console.log(`Resuming full scan ${scanId} from checkpoint: ID ${cp}`);
     }
   }
 
@@ -206,38 +187,35 @@ export async function runScan(
   const throttle = new Throttle(config.baseDelayMs, config.jitterPercent);
   const scanStartTime = Date.now();
   let ip = currentIp;
-  let shuttingDown = false;
-
-  const shutdown = () => { shuttingDown = true; };
-  process.on("SIGTERM", shutdown);
-  process.on("SIGINT", shutdown);
 
   let batchScanned = 0;
   let batchFound = 0;
 
-  // Begin a transaction for the first batch
-  db.run("BEGIN");
-
   for (let i = startIndex; i < range.totalCount; i++) {
-    if (shuttingDown) {
-      db.run("COMMIT");
-      const citizenId = range.getId(i);
-      const msg = `🛑 Profiler stopped at ID ${citizenId}`;
-      console.log(msg);
-      await sendTelegram(msg);
-      if (i > startIndex) {
-        saveCheckpoint(db, scanId, range.getId(i - 1));
+    // Check for cancellation at checkpoint intervals
+    if (batchScanned > 0 && batchScanned % config.checkpointInterval === 0) {
+      const currentStatus = await getScanStatus(sql, scanId);
+      if (currentStatus === "cancelling") {
+        const citizenId = range.getId(i);
+        const msg = `🛑 Profiler stopped at ID ${citizenId} (cancelled via UI)`;
+        console.log(msg);
+        await sendTelegram(msg);
+        await saveCheckpoint(sql, scanId, range.getId(i - 1));
+        await incrementScanCounters(sql, scanId, { scanned: batchScanned, found: batchFound });
+        await updateScanStatus(sql, scanId, "cancelled");
+        return;
       }
-      incrementScanCounters(db, scanId, { scanned: batchScanned, found: batchFound });
-      process.removeListener("SIGTERM", shutdown);
-      process.removeListener("SIGINT", shutdown);
-      return;
+
+      await saveCheckpoint(sql, scanId, range.getId(i - 1));
+      await incrementScanCounters(sql, scanId, { scanned: batchScanned, found: batchFound });
+      batchScanned = 0;
+      batchFound = 0;
     }
 
     const citizenId = range.getId(i);
     const fetchResult = await fetchCitizen(citizenId);
 
-    // Rotate VPN on block (403/Cloudflare) so subsequent profiles have a fresh IP
+    // Rotate VPN on block
     if (fetchResult.type === "error" && fetchResult.error?.retryable) {
       const code = fetchResult.error.statusCode;
       if (code === 403 || code === 429 || !code) {
@@ -252,7 +230,7 @@ export async function runScan(
     batchScanned++;
 
     if (fetchResult.type === "not_found") {
-      insertSnapshot(db, {
+      await insertSnapshot(sql, {
         scan_id: scanId, citizen_id: citizenId, scanned_at: now,
         status: "not_found", is_organization: null,
         name: null, level: null, xp: null, created_at: null, avatar_url: null,
@@ -278,7 +256,7 @@ export async function runScan(
       if (parsed.type === "skip") {
         stats.skipped++;
         if (parsed.citizenId) {
-          insertOrganization(db, scanId, parsed.citizenId, parsed.name, parsed.createdAt, now);
+          await insertOrganization(sql, scanId, parsed.citizenId, parsed.name, parsed.createdAt, now);
         }
       } else {
         const snapshot: SnapshotRow = {
@@ -286,15 +264,15 @@ export async function runScan(
           scanned_at: now,
           ...parsed.snapshot,
         };
-        insertSnapshot(db, snapshot);
+        await insertSnapshot(sql, snapshot);
 
         if (scanType === "retry" && retryRowIdMap) {
           const rowId = retryRowIdMap.get(citizenId);
-          if (rowId !== undefined) markCitizenRetried(db, rowId);
+          if (rowId !== undefined) await markCitizenRetried(sql, rowId);
         }
 
         if (parsed.achievements.length > 0) {
-          insertAchievements(db, scanId, citizenId, parsed.achievements);
+          await insertAchievements(sql, scanId, citizenId, parsed.achievements);
         }
 
         batchFound++;
@@ -304,27 +282,16 @@ export async function runScan(
       }
     } else {
       stats.errors++;
-      insertScanError(db, scanId, citizenId, now,
+      await insertScanError(sql, scanId, citizenId, now,
         fetchResult.error?.statusCode,
         fetchResult.error?.message ?? "Unknown error",
         fetchResult.error?.retryable ?? false,
       );
-      insertFailedCitizen(
-        db, scanId, citizenId, now,
+      await insertFailedCitizen(sql, scanId, citizenId, now,
         fetchResult.error?.message ?? "Unknown error",
         fetchResult.error?.statusCode,
         1,
       );
-    }
-
-    // Checkpoint + commit transaction at batch intervals
-    if (batchScanned % config.checkpointInterval === 0) {
-      db.run("COMMIT");
-      saveCheckpoint(db, scanId, citizenId);
-      incrementScanCounters(db, scanId, { scanned: batchScanned, found: batchFound });
-      batchScanned = 0;
-      batchFound = 0;
-      db.run("BEGIN");
     }
 
     // Progress notification
@@ -336,27 +303,24 @@ export async function runScan(
       const msg = `📊 Progress: ${citizenId}/${range.endId} (${pct}%) · Alive: ${stats.alive} · Dead: ${stats.dead} · 404: ${stats.notFound} · Speed: ${speed}/min`;
       console.log(msg);
       await sendTelegram(msg);
+
+      await upsertScanProgress(sql, scanId, citizenId, stats, speed);
     }
 
-    // Adaptive delay between requests
+    // Adaptive delay
     const delay = throttle.getDelay();
     if (delay > 0) await Bun.sleep(delay);
   }
 
-  // Commit remaining batch
-  db.run("COMMIT");
-
+  // Final flush
   if (batchScanned > 0) {
-    incrementScanCounters(db, scanId, { scanned: batchScanned, found: batchFound });
+    await incrementScanCounters(sql, scanId, { scanned: batchScanned, found: batchFound });
   }
 
-  finishScan(db, scanId);
+  await finishScan(sql, scanId);
 
   const elapsed = Date.now() - scanStartTime;
   const doneMsg = `✅ Scan complete. Type: ${scanType}. Alive: ${stats.alive}. Dead: ${stats.dead}. Banned: ${stats.banned}. 404: ${stats.notFound}. Errors: ${stats.errors}. Duration: ${formatDuration(elapsed)}`;
   console.log(doneMsg);
   await sendTelegram(doneMsg);
-
-  process.removeListener("SIGTERM", shutdown);
-  process.removeListener("SIGINT", shutdown);
 }

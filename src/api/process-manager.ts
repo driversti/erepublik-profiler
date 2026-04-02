@@ -1,16 +1,9 @@
-import type { Database } from "bun:sqlite";
-
-interface ManagedProcess {
-  subprocess: ReturnType<typeof Bun.spawn>;
-  startId: number;
-  endId: number;
-  scanType: string;
-  spawnedAt: number;
-}
+import type { Sql } from "../db/database.ts";
 
 export interface ScanStatusResponse {
   state: "running" | "idle";
   scan_id?: number;
+  scan_type?: string;
   start_id?: number;
   end_id?: number;
   current_id?: number;
@@ -27,83 +20,92 @@ export interface ScanStatusResponse {
   last_scan?: unknown;
 }
 
+const HEARTBEAT_STALE_MS = 2 * 60 * 1000; // 2 minutes
+
 export class ProcessManager {
-  private current: ManagedProcess | null = null;
+  constructor(private sql: Sql) {}
 
-  isRunning(): boolean {
-    if (!this.current) return false;
-    return this.current.subprocess.exitCode === null;
+  async start(startId: number, endId: number, scanType: string): Promise<void> {
+    // Check if there's already a running or pending scan
+    const [active] = await this.sql`
+      SELECT id FROM scans WHERE status IN ('running', 'pending') LIMIT 1
+    `;
+    if (active) throw new Error("Scanner already has an active scan");
+
+    await this.sql`
+      INSERT INTO scans (started_at, scan_type, start_id, end_id, status)
+      VALUES (NOW(), ${scanType}, ${startId}, ${endId}, 'pending')
+    `;
   }
 
-  start(startId: number, endId: number, scanType: string, env: Record<string, string>): void {
-    if (this.isRunning()) throw new Error("Scanner already running");
-    const subprocess = Bun.spawn(
-      ["bun", "run", "src/index.ts", "scan", scanType],
-      {
-        env: { ...process.env, ...env, START_ID: String(startId), END_ID: String(endId) },
-        stdout: "inherit",
-        stderr: "inherit",
-        cwd: process.cwd(),
-      },
-    );
-    this.current = { subprocess, startId, endId, scanType, spawnedAt: Date.now() };
+  async stop(): Promise<void> {
+    const [active] = await this.sql`
+      SELECT id FROM scans WHERE status = 'running' LIMIT 1
+    `;
+    if (!active) throw new Error("No running scan to stop");
+
+    await this.sql`UPDATE scans SET status = 'cancelling' WHERE id = ${active.id}`;
   }
 
-  stop(): void {
-    if (!this.isRunning()) throw new Error("Scanner not running");
-    this.current!.subprocess.kill();
-  }
+  async getStatus(): Promise<ScanStatusResponse> {
+    // Check for running scan
+    const [running] = await this.sql`
+      SELECT s.*, sp.current_id, sp.alive, sp.dead, sp.banned, sp.not_found, sp.errors, sp.rate_per_min, sp.updated_at AS progress_updated_at
+      FROM scans s
+      LEFT JOIN scan_progress sp ON s.id = sp.scan_id
+      WHERE s.status IN ('running', 'pending', 'cancelling')
+      ORDER BY s.id DESC LIMIT 1
+    `;
 
-  getStatus(db: Database): ScanStatusResponse {
-    if (!this.isRunning()) {
-      const lastScan = db.query("SELECT * FROM scans WHERE finished_at IS NOT NULL ORDER BY id DESC LIMIT 1").get();
-      return { state: "idle", last_scan: lastScan };
+    if (!running || running.status === "pending") {
+      // Check if pending (scanner hasn't picked it up yet)
+      if (running?.status === "pending") {
+        return {
+          state: "running",
+          scan_id: running.id,
+          scan_type: running.scan_type,
+          start_id: running.start_id,
+          end_id: running.end_id,
+        };
+      }
+      const [lastScan] = await this.sql`SELECT * FROM scans WHERE finished_at IS NOT NULL ORDER BY id DESC LIMIT 1`;
+      return { state: "idle", last_scan: lastScan ?? null };
     }
 
-    const { startId, endId } = this.current!;
-
-    const unfinished = db.query(
-      "SELECT * FROM scans WHERE finished_at IS NULL ORDER BY id DESC LIMIT 1"
-    ).get() as { id: number; started_at: string } | null;
-
-    if (!unfinished) {
-      return { state: "running", start_id: startId, end_id: endId };
+    // Check heartbeat — if progress hasn't updated in 2 min, scanner may have crashed
+    if (running.progress_updated_at) {
+      const staleSince = Date.now() - new Date(running.progress_updated_at).getTime();
+      if (staleSince > HEARTBEAT_STALE_MS && running.current_id) {
+        // Still report as running but with stale data
+      }
     }
 
-    const checkpoint = db.query(
-      "SELECT last_processed_id FROM checkpoint WHERE scan_id = ?"
-    ).get(unfinished.id) as { last_processed_id: number } | null;
-
-    const currentId = checkpoint?.last_processed_id ?? startId;
-    const total = endId - startId + 1;
-    const processed = currentId - startId + 1;
+    const total = running.end_id - running.start_id + 1;
+    const currentId = running.current_id ?? running.start_id;
+    const processed = currentId - running.start_id + 1;
     const progressPct = Math.min(100, Math.round((processed / total) * 1000) / 10);
 
-    const elapsedMs = Date.now() - new Date(unfinished.started_at).getTime();
-    const elapsedMin = elapsedMs / 60_000;
-    const ratePm = elapsedMin > 0 ? Math.round(processed / elapsedMin) : 0;
-    const remaining = endId - currentId;
-    const etaSec = ratePm > 0 ? Math.round((remaining / ratePm) * 60) : null;
-
-    const counts = db.query(
-      "SELECT status, COUNT(*) AS count FROM snapshots WHERE scan_id = ? GROUP BY status"
-    ).all(unfinished.id) as { status: string; count: number }[];
-
-    const stats = { alive: 0, dead: 0, banned: 0, not_found: 0, errors: 0 };
-    for (const r of counts) {
-      if (r.status in stats) (stats as any)[r.status] = r.count;
-    }
+    const ratePerMin = running.rate_per_min ?? 0;
+    const remainingIds = running.end_id - currentId;
+    const etaSec = ratePerMin > 0 ? Math.round((remainingIds / ratePerMin) * 60) : null;
 
     return {
       state: "running",
-      scan_id: unfinished.id,
-      start_id: startId,
-      end_id: endId,
+      scan_id: running.id,
+      scan_type: running.scan_type,
+      start_id: running.start_id,
+      end_id: running.end_id,
       current_id: currentId,
       progress_pct: progressPct,
       eta_seconds: etaSec,
-      rate_per_min: ratePm,
-      stats,
+      rate_per_min: ratePerMin,
+      stats: running.current_id ? {
+        alive: running.alive ?? 0,
+        dead: running.dead ?? 0,
+        banned: running.banned ?? 0,
+        not_found: running.not_found ?? 0,
+        errors: running.errors ?? 0,
+      } : undefined,
     };
   }
 }
