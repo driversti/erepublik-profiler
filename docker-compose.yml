@@ -53,6 +53,7 @@ services:
       - SERVER_COUNTRIES=${SERVER_COUNTRIES:-Germany}
       - TZ=America/Los_Angeles
       - HTTP_CONTROL_SERVER_ADDRESS=:8000
+      - HTTP_CONTROL_SERVER_AUTH_CONFIG_FILEPATH=/gluetun/auth/config.toml
     ports:
       - "3000:3000"
       - "8000:8000"

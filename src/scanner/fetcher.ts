@@ -29,9 +29,14 @@ export async function fetchCitizen(citizenId: number): Promise<FetchResult> {
         "X-Requested-With": "XMLHttpRequest",
       },
       http2: false,
-      timeout: { request: 15_000 },
+      timeout: { request: 15_000, lookup: 5_000, connect: 5_000, send: 5_000 },
       responseType: "text",
+      signal: AbortSignal.timeout(20_000),
     });
+
+    if (response.statusCode === 404) {
+      return { type: "not_found" };
+    }
 
     if (isCloudflareResponse(response.body)) {
       return {
