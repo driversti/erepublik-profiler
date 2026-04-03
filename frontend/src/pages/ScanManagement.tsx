@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useQueryClient, useMutation } from '@tanstack/react-query';
 import { useScanStatus, useFailedCitizens, useScans } from '../api/hooks';
 import { startScan, stopScan, retryFailedCitizens, retryAllFailedCitizens } from '../api/client';
-import { formatNumber, formatDateTime } from '../utils/formatters';
+import { formatNumber, formatDateTime, formatEta } from '../utils/formatters';
 import Pagination from '../components/Pagination';
 
 function ScanManagement() {
@@ -92,7 +92,7 @@ function ScanManagement() {
                       <span>
                         {status.rate_per_min !== undefined && <>{formatNumber(status.rate_per_min)} IDs/min · </>}
                         {status.eta_seconds != null
-                          ? `ETA ~${Math.ceil(status.eta_seconds / 60)}m`
+                          ? `ETA ~${formatEta(status.eta_seconds)}`
                           : 'Calculating...'}
                       </span>
                     </div>
