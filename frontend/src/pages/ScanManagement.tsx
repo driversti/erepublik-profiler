@@ -88,7 +88,7 @@ function ScanManagement() {
                 {status.progress_pct !== undefined && (
                   <div>
                     <div className="flex justify-between text-xs text-secondary mb-1">
-                      <span>{status.progress_pct}%</span>
+                      <span>{status.progress_pct.toFixed(3)}%</span>
                       <span>
                         {status.rate_per_min !== undefined && <>{formatNumber(status.rate_per_min)} IDs/min · </>}
                         {status.eta_seconds != null
@@ -110,6 +110,7 @@ function ScanManagement() {
                     <span className="text-semantic-green">Alive: {formatNumber(status.stats.alive)}</span>
                     <span className="text-secondary">Dead: {formatNumber(status.stats.dead)}</span>
                     <span className="text-semantic-gold">Banned: {formatNumber(status.stats.banned)}</span>
+                    <span className="text-secondary">Not found: {formatNumber(status.stats.not_found)}</span>
                     <span className="text-semantic-red">Errors: {formatNumber(status.stats.errors)}</span>
                   </div>
                 )}
