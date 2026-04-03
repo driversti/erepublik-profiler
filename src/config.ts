@@ -29,7 +29,7 @@ export function loadConfig(): Config {
     jitterPercent: 0.3,
     vpnPollIntervalMs: 1000,
     vpnPollTimeoutMs: 15_000,
-    vpnSleepOnFailureMs: 60_000,
+    vpnSleepOnFailureMs: 15_000,
     progressEveryN: 10_000,
   };
 }

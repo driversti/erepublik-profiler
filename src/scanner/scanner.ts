@@ -250,6 +250,11 @@ export async function runScan(
         pvp_matches_played: null, pvp_matches_won: null, pvp_matches_lost: null,
       });
       stats.notFound++;
+
+      if (scanType === "retry" && retryRowIdMap) {
+        const rowId = retryRowIdMap.get(citizenId);
+        if (rowId !== undefined) await markCitizenRetried(sql, rowId);
+      }
     } else if (fetchResult.type === "success" && fetchResult.data) {
       const parsed = parseCitizenResponse(fetchResult.data);
 

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useCountryStats, useCountryCitizens } from '../api/hooks';
 import { formatNumber } from '../utils/formatters';
+import CountryFlag from '../components/CountryFlag';
 import StatCard from '../components/StatCard';
 import Pagination from '../components/Pagination';
 
@@ -29,7 +30,10 @@ function CountryDetail() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold text-primary mb-6">Country #{countryId}</h1>
+      <h1 className="text-2xl font-bold text-primary mb-6 flex items-center gap-3">
+        <CountryFlag name={stats.citizenship_country_name} size="md" />
+        {stats.citizenship_country_name || `Country #${countryId}`}
+      </h1>
 
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-8">
         <StatCard label="Active Players" value={formatNumber(stats.alive_count)} color="text-semantic-green" />
@@ -38,9 +42,9 @@ function CountryDetail() {
       </div>
 
       <div className="bg-surface rounded-lg border shadow-card p-4">
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 gap-2">
           <h2 className="text-lg font-semibold text-primary">Citizens</h2>
-          <div className="flex gap-1">
+          <div className="flex flex-wrap gap-1">
             {sortOptions.map((opt) => (
               <button
                 key={opt.value}
@@ -61,14 +65,15 @@ function CountryDetail() {
           <div className="text-secondary py-4">Loading...</div>
         ) : (
           <>
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto">
+            <table className="w-full text-sm min-w-[500px]">
               <thead>
                 <tr className="border-b text-left text-secondary">
                   <th className="pb-2 font-medium">Player</th>
                   <th className="pb-2 font-medium text-right">Level</th>
                   <th className="pb-2 font-medium text-right">Strength</th>
-                  <th className="pb-2 font-medium text-right">Ground Rank</th>
-                  <th className="pb-2 font-medium text-right">Air Rank</th>
+                  <th className="pb-2 font-medium text-right whitespace-nowrap">Ground Rank</th>
+                  <th className="pb-2 font-medium text-right whitespace-nowrap">Air Rank</th>
                 </tr>
               </thead>
               <tbody>
@@ -94,6 +99,7 @@ function CountryDetail() {
                 ))}
               </tbody>
             </table>
+            </div>
             {citizens && (
               <Pagination total={citizens.total} limit={limit} offset={offset} onPageChange={setOffset} />
             )}

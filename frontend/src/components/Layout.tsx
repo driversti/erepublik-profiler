@@ -1,5 +1,5 @@
-import { NavLink, Outlet, useNavigate } from 'react-router-dom';
-import { useState } from 'react';
+import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
+import { useState, useEffect } from 'react';
 import { useTheme } from '../context/ThemeContext';
 
 function SunIcon() {
@@ -26,8 +26,31 @@ function SearchIcon() {
   );
 }
 
+function MenuIcon() {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
+    </svg>
+  );
+}
+
+function CloseIcon() {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+    </svg>
+  );
+}
+
 const navLinkClass = ({ isActive }: { isActive: boolean }) =>
   `px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+    isActive
+      ? 'text-accent bg-accent-light'
+      : 'text-secondary hover:text-primary hover:bg-surface-hover'
+  }`;
+
+const mobileNavLinkClass = ({ isActive }: { isActive: boolean }) =>
+  `block px-3 py-2.5 rounded-md text-base font-medium transition-colors ${
     isActive
       ? 'text-accent bg-accent-light'
       : 'text-secondary hover:text-primary hover:bg-surface-hover'
@@ -36,13 +59,21 @@ const navLinkClass = ({ isActive }: { isActive: boolean }) =>
 function Layout() {
   const { theme, toggleTheme } = useTheme();
   const [searchQuery, setSearchQuery] = useState('');
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const navigate = useNavigate();
+  const location = useLocation();
+
+  // Close mobile menu on navigation
+  useEffect(() => {
+    setMobileMenuOpen(false);
+  }, [location.pathname]);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     if (searchQuery.trim().length >= 2) {
       navigate(`/search?name=${encodeURIComponent(searchQuery.trim())}`);
       setSearchQuery('');
+      setMobileMenuOpen(false);
     }
   };
 
@@ -55,21 +86,23 @@ function Layout() {
               <NavLink to="/" className="text-lg font-bold text-primary mr-4">
                 Profiler
               </NavLink>
-              <NavLink to="/" className={navLinkClass} end>
-                Dashboard
-              </NavLink>
-              <NavLink to="/countries" className={navLinkClass}>
-                Countries
-              </NavLink>
-              <NavLink to="/players" className={navLinkClass}>
-                Players
-              </NavLink>
-              <NavLink to="/search" className={navLinkClass}>
-                Search
-              </NavLink>
-              <NavLink to="/scan" className={navLinkClass}>
-                Scan
-              </NavLink>
+              <div className="hidden md:flex items-center gap-1">
+                <NavLink to="/" className={navLinkClass} end>
+                  Dashboard
+                </NavLink>
+                <NavLink to="/countries" className={navLinkClass}>
+                  Countries
+                </NavLink>
+                <NavLink to="/players" className={navLinkClass}>
+                  Players
+                </NavLink>
+                <NavLink to="/search" className={navLinkClass}>
+                  Search
+                </NavLink>
+                <NavLink to="/scan" className={navLinkClass}>
+                  Scan
+                </NavLink>
+              </div>
             </div>
 
             <div className="flex items-center gap-2">
@@ -94,9 +127,53 @@ function Layout() {
               >
                 {theme === 'light' ? <MoonIcon /> : <SunIcon />}
               </button>
+              <button
+                onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+                className="md:hidden p-2 rounded-md text-secondary hover:text-primary hover:bg-surface-hover transition-colors"
+                aria-label="Toggle menu"
+              >
+                {mobileMenuOpen ? <CloseIcon /> : <MenuIcon />}
+              </button>
             </div>
           </div>
         </div>
+
+        {/* Mobile menu */}
+        {mobileMenuOpen && (
+          <div className="md:hidden border-t border-nav">
+            <div className="px-4 py-3 space-y-1">
+              <NavLink to="/" className={mobileNavLinkClass} end>
+                Dashboard
+              </NavLink>
+              <NavLink to="/countries" className={mobileNavLinkClass}>
+                Countries
+              </NavLink>
+              <NavLink to="/players" className={mobileNavLinkClass}>
+                Players
+              </NavLink>
+              <NavLink to="/search" className={mobileNavLinkClass}>
+                Search
+              </NavLink>
+              <NavLink to="/scan" className={mobileNavLinkClass}>
+                Scan
+              </NavLink>
+              <form onSubmit={handleSearch} className="sm:hidden pt-2">
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search player..."
+                    className="w-full pl-8 pr-3 py-2 text-sm bg-surface-secondary border rounded-md focus:outline-none focus:ring-1 focus:ring-accent text-primary placeholder:text-tertiary"
+                  />
+                  <div className="absolute left-2 top-1/2 -translate-y-1/2 text-tertiary">
+                    <SearchIcon />
+                  </div>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
       </nav>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">

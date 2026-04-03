@@ -1,5 +1,5 @@
 import { useStats, useCountries } from '../api/hooks';
-import { formatNumber, formatDateTime } from '../utils/formatters';
+import { formatNumber, getFlagUrl } from '../utils/formatters';
 import StatCard from '../components/StatCard';
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 
@@ -33,11 +33,7 @@ function Dashboard() {
         <StatCard label="Alive Players" value={formatNumber(stats.total_alive)} color="text-semantic-green" />
         <StatCard label="Dead Accounts" value={formatNumber(stats.total_dead)} color="text-semantic-red" />
         <StatCard label="Banned" value={formatNumber(stats.total_banned)} color="text-semantic-gold" />
-        <StatCard
-          label="Last Scan"
-          value={stats.last_scan?.scan_type || '—'}
-          subtitle={formatDateTime(stats.last_scan?.finished_at || stats.last_scan?.started_at || null)}
-        />
+        <StatCard label="Not Found" value={formatNumber(stats.total_not_found)} color="text-secondary" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -46,7 +42,7 @@ function Dashboard() {
             <h2 className="text-lg font-semibold text-primary mb-4">Account Status Distribution</h2>
             <ResponsiveContainer width="100%" height={300}>
               <PieChart>
-                <Pie data={statusData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={100} label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}>
+                <Pie data={statusData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}>
                   {statusData.map((_, i) => (
                     <Cell key={i} fill={STATUS_COLORS[i % STATUS_COLORS.length]} />
                   ))}
@@ -60,10 +56,26 @@ function Dashboard() {
         {!countriesLoading && topCountries.length > 0 && (
           <div className="bg-surface rounded-lg border shadow-card p-4">
             <h2 className="text-lg font-semibold text-primary mb-4">Top Countries by Active Players</h2>
-            <ResponsiveContainer width="100%" height={Math.max(300, topCountries.length * 28)}>
+            <ResponsiveContainer width="100%" height={Math.max(300, topCountries.length * 32)}>
               <BarChart data={topCountries} layout="vertical" margin={{ left: 80 }}>
                 <XAxis type="number" tick={{ fill: 'var(--color-text-secondary)', fontSize: 12 }} />
-                <YAxis type="category" dataKey="citizenship_country_name" tick={{ fill: 'var(--color-text-secondary)', fontSize: 12 }} width={75} />
+                <YAxis
+                  type="category"
+                  dataKey="citizenship_country_name"
+                  width={95}
+                  tick={(props: { x: number; y: number; payload: { value: string } }) => {
+                    const { x, y, payload } = props;
+                    const flagUrl = getFlagUrl(payload.value);
+                    return (
+                      <g transform={`translate(${x},${y})`}>
+                        {flagUrl && <image href={flagUrl} x={-95} y={-8} width={20} height={14} />}
+                        <text x={-70} y={0} dy={4} fill="var(--color-text-secondary)" fontSize={12} textAnchor="start">
+                          {payload.value}
+                        </text>
+                      </g>
+                    );
+                  }}
+                />
                 <Tooltip formatter={(value: number) => formatNumber(value)} />
                 <Bar dataKey="alive_count" fill="var(--color-accent)" radius={[0, 4, 4, 0]} />
               </BarChart>

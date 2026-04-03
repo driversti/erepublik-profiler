@@ -135,9 +135,11 @@ export function createRouteHandler(sql: Sql, processManager: ProcessManager): (r
         const countryId = parseInt(countryMatch[1], 10);
 
         const [stats] = await sql.unsafe(`
-          SELECT COUNT(*) AS alive_count, AVG(s.level) AS avg_level, AVG(s.strength) AS avg_strength
+          SELECT s.citizenship_country_name,
+                 COUNT(*) AS alive_count, AVG(s.level) AS avg_level, AVG(s.strength) AS avg_strength
           FROM snapshots s ${LATEST}
           WHERE s.citizenship_country_id = $1 AND s.status = 'alive'
+          GROUP BY s.citizenship_country_name
         `, [countryId]);
 
         if (!stats || Number(stats.alive_count) === 0) {
@@ -146,6 +148,7 @@ export function createRouteHandler(sql: Sql, processManager: ProcessManager): (r
 
         return json({
           citizenship_country_id: countryId,
+          citizenship_country_name: stats.citizenship_country_name,
           alive_count: Number(stats.alive_count),
           avg_level: Math.round(Number(stats.avg_level)),
           avg_strength: Math.round(Number(stats.avg_strength) || 0),
@@ -273,6 +276,14 @@ export function createRouteHandler(sql: Sql, processManager: ProcessManager): (r
         } else {
           return json({ error: "Provide ids array or all: true" }, 400);
         }
+
+        // Auto-create a retry scan so the worker picks it up
+        try {
+          await processManager.start(0, 0, "retry");
+        } catch {
+          // scan already active — retry will happen after current scan finishes
+        }
+
         return json({ ok: true });
       }
 

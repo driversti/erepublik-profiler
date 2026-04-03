@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useSearchCitizens } from '../api/hooks';
+import CountryFlag from '../components/CountryFlag';
 import Pagination from '../components/Pagination';
 
 function Search() {
@@ -56,8 +57,8 @@ function Search() {
           </div>
 
           {data.results.length > 0 ? (
-            <div className="bg-surface rounded-lg border shadow-card overflow-hidden">
-              <table className="w-full text-sm">
+            <div className="bg-surface rounded-lg border shadow-card overflow-x-auto">
+              <table className="w-full text-sm min-w-[480px]">
                 <thead>
                   <tr className="border-b text-left text-secondary bg-surface-secondary">
                     <th className="px-4 py-3 font-medium">Name</th>
@@ -75,7 +76,12 @@ function Search() {
                         </Link>
                       </td>
                       <td className="px-4 py-3 text-right text-primary">{citizen.level}</td>
-                      <td className="px-4 py-3 text-secondary">{citizen.citizenship_country_name}</td>
+                      <td className="px-4 py-3 text-secondary">
+                        <span className="flex items-center gap-1.5">
+                          <CountryFlag name={citizen.citizenship_country_name} />
+                          {citizen.citizenship_country_name}
+                        </span>
+                      </td>
                       <td className="px-4 py-3">
                         <span className={`px-2 py-0.5 rounded text-xs font-medium ${
                           citizen.status === 'alive'

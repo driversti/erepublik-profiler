@@ -84,6 +84,7 @@ export interface CountrySummary {
 
 export interface CountryStats {
   citizenship_country_id: number;
+  citizenship_country_name: string;
   alive_count: number;
   avg_level: number;
   avg_strength: number;

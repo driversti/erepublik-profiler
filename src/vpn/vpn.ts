@@ -101,7 +101,8 @@ export function createVpn(
         console.error(`VPN rotation attempt ${attempt + 1}/3 failed`);
       }
 
-      const msg = "⚠️ VPN reconnect failed 3x. Sleeping 5min.";
+      const sleepSec = Math.round(config.vpnSleepOnFailureMs / 1000);
+      const msg = `⚠️ VPN reconnect failed 3x. Sleeping ${sleepSec}s.`;
       console.error(msg);
       await sendTelegram(msg);
       await Bun.sleep(config.vpnSleepOnFailureMs);

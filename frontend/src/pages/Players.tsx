@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { usePlayers } from '../api/hooks';
 import { formatNumber } from '../utils/formatters';
+import CountryFlag from '../components/CountryFlag';
 import Pagination from '../components/Pagination';
 
 type Status = 'all' | 'alive' | 'dead' | 'banned';
@@ -82,47 +83,54 @@ function Players() {
             <div className="px-4 py-2 text-xs text-secondary border-b">
               {formatNumber(data.total)} players
             </div>
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b text-secondary">
-                  {COLUMNS.map((col) => (
-                    <th
-                      key={col.key}
-                      onClick={() => handleSort(col.key)}
-                      className={`px-4 py-3 font-medium cursor-pointer hover:text-primary select-none ${col.align === 'right' ? 'text-right' : 'text-left'}`}
-                    >
-                      {col.label}{sortIcon(col.key)}
-                    </th>
-                  ))}
-                  <th className="px-4 py-3 font-medium text-left">Country</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.results.map((p) => (
-                  <tr key={p.citizen_id} className="border-b border-surface-secondary hover:bg-surface-hover">
-                    <td className="px-4 py-2 text-right text-secondary">{p.citizen_id}</td>
-                    <td className="px-4 py-2">
-                      <div className="flex items-center gap-2">
-                        <span
-                          title={p.status}
-                          className={`w-2 h-2 rounded-full flex-shrink-0 ${
-                            p.status === 'alive' ? 'bg-green-500' :
-                            p.status === 'banned' ? 'bg-red-500' : 'bg-gray-400'
-                          }`}
-                        />
-                        <Link to={`/citizens/${p.citizen_id}`} className="text-accent hover:underline font-medium">
-                          {p.name ?? '—'}
-                        </Link>
-                      </div>
-                    </td>
-                    <td className="px-4 py-2 text-right">{formatNumber(p.level)}</td>
-                    <td className="px-4 py-2 text-right">{formatNumber(p.xp)}</td>
-                    <td className="px-4 py-2 text-right">{formatNumber(p.strength)}</td>
-                    <td className="px-4 py-2 text-secondary">{p.citizenship_country_name ?? '—'}</td>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm min-w-[600px]">
+                <thead>
+                  <tr className="border-b text-secondary">
+                    {COLUMNS.map((col) => (
+                      <th
+                        key={col.key}
+                        onClick={() => handleSort(col.key)}
+                        className={`px-4 py-3 font-medium cursor-pointer hover:text-primary select-none whitespace-nowrap ${col.align === 'right' ? 'text-right' : 'text-left'}`}
+                      >
+                        {col.label}{sortIcon(col.key)}
+                      </th>
+                    ))}
+                    <th className="px-4 py-3 font-medium text-left">Country</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {data.results.map((p) => (
+                    <tr key={p.citizen_id} className="border-b border-surface-secondary hover:bg-surface-hover">
+                      <td className="px-4 py-2 text-right text-secondary">{p.citizen_id}</td>
+                      <td className="px-4 py-2">
+                        <div className="flex items-center gap-2">
+                          <span
+                            title={p.status}
+                            className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                              p.status === 'alive' ? 'bg-green-500' :
+                              p.status === 'banned' ? 'bg-red-500' : 'bg-gray-400'
+                            }`}
+                          />
+                          <Link to={`/citizens/${p.citizen_id}`} className="text-accent hover:underline font-medium">
+                            {p.name ?? '—'}
+                          </Link>
+                        </div>
+                      </td>
+                      <td className="px-4 py-2 text-right">{formatNumber(p.level)}</td>
+                      <td className="px-4 py-2 text-right">{formatNumber(p.xp)}</td>
+                      <td className="px-4 py-2 text-right">{formatNumber(p.strength)}</td>
+                      <td className="px-4 py-2 text-secondary whitespace-nowrap">
+                        <span className="flex items-center gap-1.5">
+                          <CountryFlag name={p.citizenship_country_name} />
+                          {p.citizenship_country_name ?? '—'}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
             <div className="px-4">
               <Pagination total={data.total} limit={limit} offset={offset} onPageChange={setOffset} />
             </div>

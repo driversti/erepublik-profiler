@@ -1,6 +1,7 @@
 import { useParams, Link } from 'react-router-dom';
 import { useCitizen, useCitizenHistory, useCitizenAchievements } from '../api/hooks';
 import { formatNumber, formatDate, formatCompact } from '../utils/formatters';
+import CountryFlag from '../components/CountryFlag';
 import StatCard from '../components/StatCard';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 
@@ -37,46 +38,49 @@ function CitizenProfile() {
 
   return (
     <div>
-      <div className="flex items-center gap-4 mb-6">
+      <div className="flex items-start gap-4 mb-6">
         {citizen.avatar_url && (
-          <img src={citizen.avatar_url} alt={citizen.name} className="w-16 h-16 rounded-full border-2 border" />
+          <img src={citizen.avatar_url} alt={citizen.name} className="w-14 h-14 sm:w-16 sm:h-16 rounded-full border-2 border flex-shrink-0" />
         )}
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            <h1 className="text-2xl font-bold text-primary">{citizen.name} <span className="text-secondary text-lg font-normal">#{citizenId}</span></h1>
-            <a
-              href={`https://www.erepublik.com/en/citizen/profile/${citizenId}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              title="View on eRepublik"
-            >
-              <img src="https://www.erepublik.com/favicon.ico" alt="eRepublik" className="w-4 h-4" />
-            </a>
-            <a
-              href={`https://erepublik.tools/en/society/citizen/${citizenId}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              title="View on eRepublik Tools"
-            >
-              <img src="https://erepublik.tools/assets/img/favicon.png" alt="eRepublik Tools" className="w-4 h-4" />
-            </a>
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2 mb-1">
+            <h1 className="text-xl sm:text-2xl font-bold text-primary">{citizen.name} <span className="text-secondary text-base sm:text-lg font-normal">#{citizenId}</span></h1>
+            <div className="flex gap-1">
+              <a
+                href={`https://www.erepublik.com/en/citizen/profile/${citizenId}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                title="View on eRepublik"
+              >
+                <img src="https://www.erepublik.com/favicon.ico" alt="eRepublik" className="w-4 h-4" />
+              </a>
+              <a
+                href={`https://erepublik.tools/en/society/citizen/${citizenId}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                title="View on eRepublik Tools"
+              >
+                <img src="https://erepublik.tools/assets/img/favicon.png" alt="eRepublik Tools" className="w-4 h-4" />
+              </a>
+            </div>
           </div>
-          <div className="flex items-center gap-3 text-sm text-secondary">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-secondary">
             <span className={`font-medium ${statusColor}`}>{citizen.status}</span>
-            <span>·</span>
+            <span className="hidden sm:inline">·</span>
             <span>Level {citizen.level}</span>
             {citizen.citizenship_country_name && (
               <>
-                <span>·</span>
+                <span className="hidden sm:inline">·</span>
                 <Link
                   to={`/countries/${citizen.citizenship_country_id}`}
-                  className="text-accent hover:text-accent-hover"
+                  className="text-accent hover:text-accent-hover flex items-center gap-1.5"
                 >
+                  <CountryFlag name={citizen.citizenship_country_name} />
                   {citizen.citizenship_country_name}
                 </Link>
               </>
             )}
-            <span>·</span>
+            <span className="hidden sm:inline">·</span>
             <span>Registered {formatDate(citizen.created_at)}</span>
           </div>
         </div>

@@ -10,7 +10,7 @@ function ScanManagement() {
   const { data: status, isLoading: statusLoading } = useScanStatus();
   const { data: scans } = useScans();
   const [offset, setOffset] = useState(0);
-  const limit = 50;
+  const [limit, setLimit] = useState(10);
   const { data: failed } = useFailedCitizens(undefined, limit, offset);
 
   const [startId, setStartId] = useState('');
@@ -81,7 +81,7 @@ function ScanManagement() {
                 <div className="text-sm text-secondary">
                   Range: {formatNumber(status.start_id)} – {formatNumber(status.end_id!)}
                   {status.current_id !== undefined && (
-                    <> · Current: <span className="text-primary font-medium">{formatNumber(status.current_id)}</span></>
+                    <> · At ID: <span className="text-primary font-medium">{formatNumber(status.current_id)}</span></>
                   )}
                 </div>
 
@@ -162,20 +162,22 @@ function ScanManagement() {
               ))}
             </div>
           </div>
-          <button
-            onClick={() => startMutation.mutate()}
-            disabled={!canStart || startMutation.isPending}
-            className="px-4 py-1.5 text-sm bg-accent text-white rounded-md font-medium hover:bg-accent-hover disabled:opacity-50 transition-colors"
-          >
-            Start Scan
-          </button>
-          <button
-            onClick={() => stopMutation.mutate()}
-            disabled={!isRunning || stopMutation.isPending}
-            className="px-4 py-1.5 text-sm bg-semantic-red text-white rounded-md font-medium hover:opacity-90 disabled:opacity-50 transition-colors"
-          >
-            Stop Scan
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={() => startMutation.mutate()}
+              disabled={!canStart || startMutation.isPending}
+              className="px-4 py-1.5 text-sm bg-accent text-white rounded-md font-medium hover:bg-accent-hover disabled:opacity-50 transition-colors"
+            >
+              Start Scan
+            </button>
+            <button
+              onClick={() => stopMutation.mutate()}
+              disabled={!isRunning || stopMutation.isPending}
+              className="px-4 py-1.5 text-sm bg-semantic-red text-white rounded-md font-medium hover:opacity-90 disabled:opacity-50 transition-colors"
+            >
+              Stop Scan
+            </button>
+          </div>
         </div>
         {(startMutation.error || stopMutation.error) && (
           <p className="mt-2 text-sm text-semantic-red">
@@ -188,13 +190,14 @@ function ScanManagement() {
       {scans && scans.length > 0 && (
         <div className="bg-surface rounded-lg border shadow-card p-4 mb-6">
           <h2 className="text-lg font-semibold text-primary mb-3">Scan History</h2>
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto">
+          <table className="w-full text-sm min-w-[640px]">
             <thead>
               <tr className="border-b text-left text-secondary">
                 <th className="pb-2 font-medium">ID</th>
                 <th className="pb-2 font-medium">Type</th>
                 <th className="pb-2 font-medium">Status</th>
-                <th className="pb-2 font-medium">Range</th>
+                <th className="pb-2 font-medium whitespace-nowrap">Range</th>
                 <th className="pb-2 font-medium">Started</th>
                 <th className="pb-2 font-medium">Finished</th>
                 <th className="pb-2 font-medium text-right">Scanned</th>
@@ -230,12 +233,13 @@ function ScanManagement() {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       )}
 
       {/* Failed Citizens */}
       <div className="bg-surface rounded-lg border shadow-card p-4">
-        <div className="flex items-center justify-between mb-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-3 gap-2">
           <h2 className="text-lg font-semibold text-primary">
             Failed Citizens {failed?.total !== undefined && <span className="text-secondary text-sm font-normal ml-1">({formatNumber(failed.total)} total)</span>}
           </h2>
@@ -261,18 +265,19 @@ function ScanManagement() {
           <div className="text-secondary text-sm py-4">No failed citizens.</div>
         ) : (
           <>
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto">
+            <table className="w-full text-sm min-w-[640px]">
               <thead>
                 <tr className="border-b text-left text-secondary">
                   <th className="pb-2">
                     <input type="checkbox" checked={selected.size === failed.results.length} onChange={toggleAll} />
                   </th>
-                  <th className="pb-2 font-medium">Citizen ID</th>
+                  <th className="pb-2 font-medium whitespace-nowrap">Citizen ID</th>
                   <th className="pb-2 font-medium">Error</th>
                   <th className="pb-2 font-medium text-right">Status</th>
                   <th className="pb-2 font-medium text-right">Retries</th>
-                  <th className="pb-2 font-medium">Failed At</th>
-                  <th className="pb-2 font-medium">Retried At</th>
+                  <th className="pb-2 font-medium whitespace-nowrap">Failed At</th>
+                  <th className="pb-2 font-medium whitespace-nowrap">Retried At</th>
                 </tr>
               </thead>
               <tbody>
@@ -281,7 +286,16 @@ function ScanManagement() {
                     <td className="py-2">
                       <input type="checkbox" checked={selected.has(f.id)} onChange={() => toggleSelect(f.id)} />
                     </td>
-                    <td className="py-2 text-primary font-medium">{formatNumber(f.citizen_id)}</td>
+                    <td className="py-2 font-medium whitespace-nowrap">
+                      <a
+                        href={`https://www.erepublik.com/en/citizen/profile/${f.citizen_id}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-accent hover:underline"
+                      >
+                        {f.citizen_id}
+                      </a>
+                    </td>
                     <td className="py-2 text-secondary truncate max-w-xs">{f.error_message}</td>
                     <td className="py-2 text-right">
                       {f.status_code ? (
@@ -291,14 +305,22 @@ function ScanManagement() {
                       ) : '—'}
                     </td>
                     <td className="py-2 text-right text-secondary">{f.retry_count}</td>
-                    <td className="py-2 text-secondary">{formatDateTime(f.failed_at)}</td>
-                    <td className="py-2 text-secondary">{f.retried_at ? formatDateTime(f.retried_at) : '—'}</td>
+                    <td className="py-2 text-secondary whitespace-nowrap">{formatDateTime(f.failed_at)}</td>
+                    <td className="py-2 text-secondary whitespace-nowrap">{f.retried_at ? formatDateTime(f.retried_at) : '—'}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
+            </div>
             {failed && (
-              <Pagination total={failed.total} limit={limit} offset={offset} onPageChange={setOffset} />
+              <Pagination
+                total={failed.total}
+                limit={limit}
+                offset={offset}
+                onPageChange={setOffset}
+                limitOptions={[10, 25, 50, 100]}
+                onLimitChange={(n) => { setLimit(n); setOffset(0); }}
+              />
             )}
           </>
         )}

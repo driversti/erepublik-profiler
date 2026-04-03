@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import { useCountries } from '../api/hooks';
 import { formatNumber } from '../utils/formatters';
+import CountryFlag from '../components/CountryFlag';
 
 function CountriesList() {
   const { data: countries, isLoading } = useCountries();
@@ -10,7 +11,7 @@ function CountriesList() {
   return (
     <div>
       <h1 className="text-2xl font-bold text-primary mb-6">Countries</h1>
-      <div className="bg-surface rounded-lg border shadow-card overflow-hidden">
+      <div className="bg-surface rounded-lg border shadow-card overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b text-left text-secondary bg-surface-secondary">
@@ -26,8 +27,9 @@ function CountriesList() {
                 <td className="px-4 py-3">
                   <Link
                     to={`/countries/${country.citizenship_country_id}`}
-                    className="text-accent hover:text-accent-hover font-medium"
+                    className="text-accent hover:text-accent-hover font-medium flex items-center gap-2"
                   >
+                    <CountryFlag name={country.citizenship_country_name} />
                     {country.citizenship_country_name}
                   </Link>
                 </td>

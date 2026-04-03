@@ -13,6 +13,11 @@ export function formatDateTime(dateStr: string | null): string {
   return new Date(dateStr).toLocaleString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
+export function getFlagUrl(countryName: string | null): string | null {
+  if (!countryName) return null;
+  return `/flags/${countryName.replace(/ /g, '-')}.svg`;
+}
+
 export function formatCompact(n: number | null): string {
   if (n === null) return '—';
   if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1)}B`;

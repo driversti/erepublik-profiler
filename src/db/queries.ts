@@ -257,17 +257,17 @@ export async function insertFailedCitizen(
 
 export async function getFailedCitizens(sql: Sql, scanId: number | null, limit: number, offset: number): Promise<FailedCitizenRow[]> {
   if (scanId !== null) {
-    return await sql`SELECT * FROM failed_citizens WHERE scan_id = ${scanId} ORDER BY citizen_id LIMIT ${limit} OFFSET ${offset}`;
+    return await sql`SELECT * FROM failed_citizens WHERE scan_id = ${scanId} AND retried_at IS NULL ORDER BY citizen_id LIMIT ${limit} OFFSET ${offset}`;
   }
-  return await sql`SELECT * FROM failed_citizens ORDER BY citizen_id LIMIT ${limit} OFFSET ${offset}`;
+  return await sql`SELECT * FROM failed_citizens WHERE retried_at IS NULL ORDER BY citizen_id LIMIT ${limit} OFFSET ${offset}`;
 }
 
 export async function countFailedCitizens(sql: Sql, scanId: number | null): Promise<number> {
   if (scanId !== null) {
-    const [row] = await sql`SELECT COUNT(*) AS count FROM failed_citizens WHERE scan_id = ${scanId}`;
+    const [row] = await sql`SELECT COUNT(*) AS count FROM failed_citizens WHERE scan_id = ${scanId} AND retried_at IS NULL`;
     return Number(row.count);
   }
-  const [row] = await sql`SELECT COUNT(*) AS count FROM failed_citizens`;
+  const [row] = await sql`SELECT COUNT(*) AS count FROM failed_citizens WHERE retried_at IS NULL`;
   return Number(row.count);
 }
 
