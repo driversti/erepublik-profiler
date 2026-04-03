@@ -81,7 +81,7 @@ export class ProcessManager {
     const total = running.end_id - running.start_id + 1;
     const currentId = checkpoint?.last_processed_id ?? running.current_id ?? running.start_id;
     const processed = running.total_scanned > 0 ? running.total_scanned : (currentId - running.start_id + 1);
-    const progressPct = Math.min(100, Math.round((processed / total) * 1000) / 10);
+    const progressPct = Math.min(100, Math.round((processed / total) * 100_000) / 1000);
 
     // Compute rate from elapsed time + total_scanned (more accurate than scan_progress.rate_per_min)
     const elapsedMs = Date.now() - new Date(running.started_at).getTime();
