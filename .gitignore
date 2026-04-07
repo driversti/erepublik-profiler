@@ -4,3 +4,5 @@ data/
 .env
 gluetun/
 docs/superpowers/
+.idea/
+.playwright-mcp/
