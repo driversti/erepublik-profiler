@@ -44,7 +44,10 @@ function ScanManagement() {
   });
 
   const isRunning = status?.state === 'running';
-  const canStart = !isRunning && startId && endId && parseInt(startId, 10) < parseInt(endId, 10);
+  const canStart = !isRunning && (
+    scanType === 'alive' ||
+    (!!startId && !!endId && parseInt(startId, 10) < parseInt(endId, 10))
+  );
 
   const toggleSelect = (id: number) => {
     setSelected((prev) => {
@@ -130,7 +133,7 @@ function ScanManagement() {
               type="number"
               value={startId}
               onChange={(e) => setStartId(e.target.value)}
-              disabled={isRunning}
+              disabled={isRunning || scanType === 'alive'}
               placeholder="e.g. 9730001"
               className="w-36 px-3 py-1.5 text-sm bg-surface-secondary border rounded-md focus:outline-none focus:ring-1 focus:ring-accent text-primary disabled:opacity-50"
             />
@@ -141,7 +144,7 @@ function ScanManagement() {
               type="number"
               value={endId}
               onChange={(e) => setEndId(e.target.value)}
-              disabled={isRunning}
+              disabled={isRunning || scanType === 'alive'}
               placeholder="e.g. 9740000"
               className="w-36 px-3 py-1.5 text-sm bg-surface-secondary border rounded-md focus:outline-none focus:ring-1 focus:ring-accent text-primary disabled:opacity-50"
             />
