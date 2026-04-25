@@ -9,6 +9,7 @@ export function startApiServer(sql: Sql, config: Config): void {
 
   Bun.serve({
     port: config.apiPort,
+    idleTimeout: 120,
     fetch: handler,
   });
 
