@@ -97,4 +97,4 @@ When changing the schema, edit `src/db/database.ts` AND remember the table will 
 
 `docker-compose.yml` runs four containers: `postgres`, `gluetun` (VPN gateway), `profiler-web` and `profiler-scanner` (both `network_mode: "service:gluetun"` so all egress goes through VPN). The web container exposes port 3000 *through Gluetun* — that's why README says 3000 even though the app's default is 3434; in compose the env sets `API_PORT=3000`.
 
-Deploy target: `192.168.10.11` (driversti), stack at `~/Projects/profiler`. Push via `./release.sh`, then `docker compose pull && docker compose up -d` on the host.
+Deploy target: `erepublik@192.168.10.18`, stack at `~/docker/profiler`. Push via `./release.sh`, then `docker compose pull && docker compose up -d` on the host. The old `driversti@192.168.10.11` host still runs `profiler-web` + `profiler-postgres` as a read-only archive of an earlier full scan — don't deploy there.
