@@ -1,100 +1,50 @@
-# CLAUDE.md
+# profiler-old
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Single source of truth for every coding agent: `AGENTS.md` and `GEMINI.md` are symlinks to this file.
 
-eRepublik citizen profile scanner. Crawls the full citizen ID range (~10M IDs), stores time-series snapshots, and serves a React dashboard. Full spec in `SPEC.md` (note: SPEC.md is partly aspirational — defer to the code where they disagree, especially around storage).
+eRepublik citizen profile scanner (Bun + TypeScript + Postgres). Crawls the full citizen ID range (~10M IDs), stores time-series snapshots, serves a React dashboard. Superseded by `../profiler/` but still deployable.
+- Two processes (`web` API+dashboard, `scan` worker) coordinate only through DB rows.
+- Spec: `SPEC.md` is partly aspirational (e.g. says SQLite; real DB is Postgres). Defer to the code.
 
-## Stack
+How it fits together (processes, scan pipeline, DB tables, frontend, env vars): [docs/architecture.md](docs/architecture.md).
 
-- **Runtime**: Bun (lockfile is `bun.lock`; not Node)
-- **Language**: TypeScript (ESM, `"type": "module"`)
-- **DB**: PostgreSQL 17 via the `postgres` package (NOT SQLite — SPEC.md is stale on this)
-- **HTTP**: `got-scraping` (TLS fingerprint rotation to evade Cloudflare)
-- **Frontend**: React 18 + Vite + Tailwind + TanStack Query + Recharts (separate `frontend/` Vite project)
-- **VPN**: Gluetun + Surfshark WireGuard, rotated via Gluetun HTTP control API
-
-## Commands
+## Build & test
 
 ```bash
-bun install                    # backend deps
-bun test                       # run all tests
-bun test tests/scanner/X.test.ts   # run a single test file
-bun run scan                   # start scanner worker (polls DB for pending scans)
-bun run web                    # start API server (default port 3434, NOT 3000)
-bun run dev                    # web server with --watch
+bun install                        # backend deps (Bun, not Node)
+bun test                           # all tests
+bun test tests/scanner/X.test.ts   # one file
+bun run scan                       # scanner worker (polls DB for pending scans)
+bun run web                        # API + dashboard, default port 3434
+bun run dev                        # web with --watch
 
-# frontend (separate package)
 cd frontend && npm install
-cd frontend && npm run dev     # Vite on :5173, proxies /api to localhost:3434
-cd frontend && npm run build   # output → frontend/dist/ (served by Bun.serve)
-
-./release.sh                   # multi-arch build + push registry.yurii.live/profiler:latest
+npm run dev                        # Vite :5173, proxies /api to localhost:3434
+npm run build                      # tsc + vite build -> frontend/dist/ (served by Bun.serve)
 ```
 
-`API_PORT` defaults to `3434` in `src/config.ts` even though docker-compose and README say `3000`. The frontend's Vite proxy hard-codes `3434`. Don't "fix" this without checking both places.
+Local end-to-end: needs Postgres (`DATABASE_URL`), copy `.env.example` to `.env`. `bun run scan` requires a VPN: it exits at startup if the public IP matches `HOME_COUNTRY`.
 
-## Architecture
+## Release & deploy
 
-The system is **two long-running processes** that share a Postgres DB. They never call each other directly — coordination is entirely through DB rows.
+```bash
+./release.sh   # builds frontend, multi-arch buildx push to registry.yurii.live/profiler:latest
+```
 
-### Process 1: `bun run web` (API + dashboard)
+Deploy target: `erepublik@192.168.10.18`, stack at `~/docker/profiler`:
+`docker compose pull && docker compose up -d`.
+- Stack = `postgres`, `gluetun` (VPN gateway), `profiler-web`, `profiler-scanner`. Web and scanner use `network_mode: "service:gluetun"`; do not recreate `gluetun` or `postgres` needlessly.
+- `driversti@192.168.10.11` still runs `profiler-web` + `profiler-postgres` as a read-only archive of an earlier full scan. Never deploy there.
+- Not verified from project files (taken from the old CLAUDE.md): the host and stack path.
 
-`src/index.ts` → `src/api/server.ts` → `Bun.serve` on `API_PORT`.
+## Conventions & gotchas
 
-- `src/api/routes.ts` — all REST endpoints, hand-rolled URL matching (no router framework). Serves `frontend/dist/` as static fallback.
-- `src/api/process-manager.ts` — `ProcessManager` class is the only way to start/stop/inspect scans. It does NOT spawn processes; it inserts a `scans` row with `status='pending'` and reads progress from DB. The actual scanning happens in the other process.
-
-### Process 2: `bun run scan` (scanner worker)
-
-`src/index.ts` → `src/scanner/worker.ts` → polls every 5s for a `pending` scan to claim, or a stale `running` scan to reclaim (heartbeat-based crash recovery).
-
-Pipeline per scan:
-1. `worker.ts` claims the scan (CAS update `pending` → `running`).
-2. `scanner.ts` runs the loop: `fetcher.ts` (got-scraping GET) → `parser.ts` (extract typed fields) → DB inserts.
-3. Checkpoint every `CHECKPOINT_INTERVAL` IDs (default 100) so a crashed scan resumes from `last_processed_id`.
-4. On 403/429/Cloudflare/timeout: exponential backoff with jitter; after 5 retries, rotate VPN via `src/vpn/vpn.ts`; after 3 rotations, log to `failed_citizens` and skip.
-5. The custom `Throttle` class in `scanner.ts` applies a slow `COOLDOWN_DELAY_MS` (200ms) for the first 30 requests after each VPN rotation, then drops to `BASE_DELAY_MS` (10ms). Repeated quick blocks lengthen the cooldown — touch this carefully, it's anti-detection tuning.
-
-### Scan types
-
-`scan_type` column drives the loop's source of IDs:
-- `full` — iterates `start_id..end_id` linearly.
-- `alive` — re-scans only `citizen_id`s whose latest snapshot is `status='alive'` (~20–30K IDs).
-- `retry` — re-runs `failed_citizens` rows that were queued via the API.
-
-Scan lifecycle: `pending → running → (finished | failed | cancelling → cancelled)`. `cancelling` is set by `ProcessManager.stop()`; the scan loop checks status periodically and exits cleanly.
-
-### Database
-
-Schema is created at startup in `src/db/database.ts` (idempotent `CREATE TABLE IF NOT EXISTS` — there is no migration tool). Key tables:
-
-- `scans` — one row per scan cycle, owns the lifecycle status.
-- `snapshots` — primary data table, ~50 typed columns, one row per citizen per scan. No raw JSON stored.
-- `achievements` — normalized medals (`medal_type`, `count`) per citizen per scan.
-- `organizations` — org accounts get logged here, not in `snapshots` (orgs are skipped from main data).
-- `failed_citizens` — IDs that hit max retries; can be re-queued for a `retry` scan.
-- `scan_errors` — per-request error log (status code, retryable flag).
-- `checkpoint` — last processed ID, for resume.
-- `scan_progress` — live counters (alive/dead/banned/not_found/errors, rate_per_min). Updated less often than `scans.total_scanned`.
-
-Status values in `snapshots.status`: `'alive' | 'dead' | 'banned' | 'not_found'`.
-
-When changing the schema, edit `src/db/database.ts` AND remember the table will already exist on deployed instances — add `ALTER TABLE` statements rather than relying on the `CREATE TABLE` to apply changes.
-
-### Frontend
-
-`frontend/src/` — pages in `pages/`, shared bits in `components/`, API client in `api/client.ts` + TanStack Query hooks in `api/hooks.ts`. Dev server proxies `/api/*` to backend; in prod, Bun.serve serves the built `frontend/dist/` from the same origin.
-
-## Conventions
-
-- **No raw JSON storage** — every API field of interest is a typed column. Adding a new field = parser change + schema change + queries change.
-- **Heartbeat-based crash recovery** — don't assume a `running` scan is alive; check `scan_progress.updated_at` (stale after `HEARTBEAT_STALE_MS = 2min`).
-- **Telegram is best-effort** — failures are logged, never thrown. Code that calls `telegram.send` shouldn't await-and-rescue; the telegram module already swallows errors.
-- **VPN required** — `src/index.ts` calls `vpn.checkIpLeak()` on `scan` startup and exits if the public IP matches `HOME_COUNTRY`. Don't disable this check without a Telegram alert.
-- **`Bun.sleep`, `Bun.serve`, `bun:test`** — Bun-specific APIs are used throughout. This codebase will not run on Node.
-
-## Deployment
-
-`docker-compose.yml` runs four containers: `postgres`, `gluetun` (VPN gateway), `profiler-web` and `profiler-scanner` (both `network_mode: "service:gluetun"` so all egress goes through VPN). The web container exposes port 3000 *through Gluetun* — that's why README says 3000 even though the app's default is 3434; in compose the env sets `API_PORT=3000`.
-
-Deploy target: `erepublik@192.168.10.18`, stack at `~/docker/profiler`. Push via `./release.sh`, then `docker compose pull && docker compose up -d` on the host. The old `driversti@192.168.10.11` host still runs `profiler-web` + `profiler-postgres` as a read-only archive of an earlier full scan — don't deploy there.
+- `API_PORT` defaults to `3434` in `src/config.ts`; compose sets `3000` (published through Gluetun) and the Vite proxy hard-codes `3434`. Don't "fix" without checking all three.
+- Bun-only APIs (`Bun.serve`, `Bun.sleep`, `bun:test`); will not run on Node.
+- No raw JSON storage: every field is a typed column. New field = parser + schema + queries change.
+- No migration tool: `src/db/database.ts` runs `CREATE TABLE IF NOT EXISTS` at startup. For existing deployments add `ALTER TABLE` statements.
+- Never assume a `running` scan is alive; check `scan_progress.updated_at` (stale after `HEARTBEAT_STALE_MS` = 2 min).
+- Telegram is best-effort: the module swallows errors; don't wrap calls in try/catch.
+- Don't disable the VPN IP-leak check (`vpn.checkIpLeak()` at scan startup) without a Telegram alert.
+- `Throttle` / cooldown constants in `scanner.ts` are anti-detection tuning; change carefully.
+- `docs/superpowers/` is gitignored (local plans/specs).
